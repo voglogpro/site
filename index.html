@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Заглушка — проверка хостинга</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:system-ui,-apple-system,sans-serif;background:#0E1A10;color:#F2F7F0;
+    min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+  .card{background:#18211A;border:1px solid rgba(235,255,238,.1);border-radius:22px;
+    padding:28px;max-width:460px;width:100%}
+  .ok{font-size:44px;text-align:center;margin-bottom:14px}
+  h1{font-size:21px;text-align:center;margin-bottom:8px}
+  .sub{color:#94A398;font-size:14px;text-align:center;margin-bottom:22px}
+  .row{display:flex;justify-content:space-between;gap:12px;padding:11px 0;
+    border-bottom:1px dashed rgba(235,255,238,.1);font-size:14px}
+  .row:last-child{border-bottom:0}
+  .row span:first-child{color:#94A398}
+  .row span:last-child{font-weight:700;text-align:right;word-break:break-word}
+  .good{color:#7BE382}.bad{color:#F07A6A}
+  .box{margin-top:18px;background:#101710;border-radius:13px;padding:14px;
+    font-family:ui-monospace,monospace;font-size:12px;color:#94A398;
+    white-space:pre-wrap;word-break:break-word;max-height:200px;overflow:auto}
+  button{width:100%;margin-top:16px;border:0;border-radius:99px;padding:14px;
+    background:#35D33A;color:#08130B;font-weight:800;font-size:15px;cursor:pointer;font-family:inherit}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="ok">✅</div>
+    <h1>Страница загрузилась</h1>
+    <p class="sub">Значит хостинг отдаёт файлы и домен работает</p>
+
+    <div class="row"><span>Адрес</span><span id="host">—</span></div>
+    <div class="row"><span>Время загрузки</span><span id="now">—</span></div>
+    <div class="row"><span>Запрос к серверу</span><span id="api">проверяю…</span></div>
+    <div class="row"><span>Telegram</span><span id="tg">—</span></div>
+
+    <div class="box" id="raw">Жду ответ от /health…</div>
+    <button id="again">Проверить ещё раз</button>
+  </div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+$('host').textContent = location.host || 'локально';
+$('now').textContent = new Date().toLocaleString('ru-RU');
+
+/* Telegram Mini App — необязателен, страница работает и в браузере */
+try{
+  const tg = window.Telegram && window.Telegram.WebApp;
+  if(tg && tg.initData !== undefined){
+    tg.ready(); tg.expand();
+    const u = tg.initDataUnsafe && tg.initDataUnsafe.user;
+    $('tg').textContent = u ? `${u.first_name || ''} (id ${u.id})` : 'открыто в Telegram';
+    $('tg').className = 'good';
+  } else {
+    $('tg').textContent = 'открыто в браузере';
+  }
+}catch(e){
+  $('tg').textContent = 'недоступен';
+}
+
+/* Проверяем, что сервер отвечает по тому же адресу */
+async function check(){
+  $('api').textContent = 'проверяю…';
+  $('api').className = '';
+  $('raw').textContent = 'Жду ответ от /health…';
+  try{
+    const res = await fetch('/health', {cache:'no-store'});
+    const data = await res.json();
+    $('api').textContent = 'отвечает';
+    $('api').className = 'good';
+    $('raw').textContent = JSON.stringify(data, null, 2);
+  }catch(err){
+    $('api').textContent = 'не отвечает';
+    $('api').className = 'bad';
+    $('raw').textContent = 'Ошибка запроса: ' + err;
+  }
+}
+
+$('again').onclick = check;
+check();
+</script>
+</body>
+</html>
