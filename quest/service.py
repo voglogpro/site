@@ -167,6 +167,8 @@ class QuestService:
         if session and session["last_location_at"]:
             last_age = max(0, int((utcnow() - parse_dt(session["last_location_at"])).total_seconds()))
         point_data = []
+        route_distance_m = 0.0
+        previous_point = None
         for point in points:
             item = row_dict(point)
             item.pop("id", None)
@@ -175,8 +177,12 @@ class QuestService:
             else:
                 item["distance_m"] = None
             item["map_url"] = f"https://yandex.ru/maps/?pt={point['longitude']},{point['latitude']}&z=17&l=map"
-            item.pop("latitude", None)
-            item.pop("longitude", None)
+            if previous_point:
+                route_distance_m += haversine_m(
+                    previous_point["latitude"], previous_point["longitude"],
+                    point["latitude"], point["longitude"],
+                )
+            previous_point = point
             point_data.append(item)
         entitlement = None
         if session:
@@ -185,6 +191,7 @@ class QuestService:
             "campaign": {
                 "title": campaign["title"], "city": campaign["city"], "status": campaign["status"],
                 "premium_title": campaign["premium_title"], "premium_instruction": campaign["premium_instruction"],
+                "route_distance_m": round(route_distance_m),
             },
             "session": row_dict(session),
             "points": point_data,
@@ -192,6 +199,7 @@ class QuestService:
             "location_stale": bool(session and (last_age is None or last_age > self.settings.location_stale_sec)),
             "premium": row_dict(entitlement),
             "support_url": self.settings.support_url,
+            "map": {"tile_url": self.settings.map_tile_url, "attribution": self.settings.map_attribution},
         }
 
     async def record_location(
@@ -345,6 +353,26 @@ class QuestService:
             """SELECT COUNT(*) total, SUM(status IN ('awaiting_location','active')) active,
                SUM(status='completed') completed, SUM(status='expired') expired FROM sessions"""
         ))
+        funnel = row_dict(await self.db.fetchone(
+            """SELECT COUNT(*) started,
+               COALESCE(SUM(last_location_at IS NOT NULL),0) geo_connected,
+               COALESCE(SUM(current_seq >= 2),0) reached_point_1,
+               COALESCE(SUM(current_seq >= 3),0) reached_point_2,
+               COALESCE(SUM(status='completed'),0) reached_point_3
+               FROM sessions"""
+        ))
+        reward_metrics = row_dict(await self.db.fetchone(
+            """SELECT COUNT(*) rewards_unlocked,
+               COUNT(DISTINCT session_id) rewarded_users
+               FROM session_points WHERE completed_at IS NOT NULL"""
+        ))
+        premium_metrics = row_dict(await self.db.fetchone(
+            """SELECT COALESCE(SUM(status='pending'),0) premium_pending,
+               COALESCE(SUM(status='issued'),0) premium_issued
+               FROM premium_entitlements"""
+        ))
+        funnel.update(reward_metrics or {})
+        funnel.update(premium_metrics or {})
         recent = [row_dict(r) for r in await self.db.fetchall(
             """SELECT s.id,s.status,s.current_seq,s.started_at,s.completed_at,s.last_location_at,s.integrity_status,
                p.user_id,p.display_name,p.username,e.status premium_status,e.public_code premium_code
@@ -352,7 +380,11 @@ class QuestService:
                LEFT JOIN premium_entitlements e ON e.session_id=s.id
                ORDER BY s.started_at DESC LIMIT 500"""
         )]
-        return {"campaign": campaign, "points": points, "metrics": metrics, "recent": recent}
+        return {
+            "campaign": campaign, "points": points, "metrics": metrics, "funnel": funnel,
+            "recent": recent,
+            "map": {"tile_url": self.settings.map_tile_url, "attribution": self.settings.map_attribution},
+        }
 
     async def participant_brief(self, user_id: int) -> dict | None:
         row = await self.db.fetchone(
@@ -368,6 +400,8 @@ class QuestService:
         allowed = {"draft", "active", "paused", "ended"}
         status = str(payload.get("status", ""))
         duration = int(payload.get("session_duration_min", self.settings.session_duration_min))
+        premium_title = str(payload.get("premium_title", "")).strip()[:160]
+        premium_instruction = str(payload.get("premium_instruction", "")).strip()[:500]
         if status not in allowed or not 30 <= duration <= 1440:
             raise QuestError("invalid_campaign", "Проверь статус и длительность.")
         async with self.db.transaction() as db:
@@ -380,7 +414,12 @@ class QuestService:
                 if demo["count"]:
                     raise QuestError("demo_points", "Сначала замени демо-точки реальными данными.", 409)
             before = json.dumps(row_dict(campaign), ensure_ascii=False)
-            await db.execute("UPDATE campaigns SET status=?,session_duration_min=?,updated_at=? WHERE id=?", (status, duration, iso(), campaign["id"]))
+            await db.execute(
+                """UPDATE campaigns SET status=?,session_duration_min=?,
+                   premium_title=COALESCE(NULLIF(?,''),premium_title),
+                   premium_instruction=COALESCE(NULLIF(?,''),premium_instruction),updated_at=? WHERE id=?""",
+                (status, duration, premium_title, premium_instruction, iso(), campaign["id"]),
+            )
             await db.execute("INSERT INTO admin_audit(admin_id,action,entity_type,entity_id,before_json,after_json,created_at) VALUES(?,?,?,?,?,?,?)", (admin_id, "campaign.update", "campaign", str(campaign["id"]), before, json.dumps(payload, ensure_ascii=False), iso()))
         return await self.admin_overview()
 

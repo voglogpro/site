@@ -85,11 +85,12 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
     async def security_middleware(request, handler):
         response = await handler(request)
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
-        response.headers["Referrer-Policy"] = "same-origin"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(self), camera=(self)"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self' https://telegram.org; script-src 'self' 'unsafe-inline' https://telegram.org; "
-            "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'self' https://web.telegram.org"
+            "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; "
+            "connect-src 'self'; frame-ancestors 'self' https://web.telegram.org"
         )
         return response
 
@@ -113,7 +114,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         return json_response({"ready": True})
 
     async def favicon(_):
-        return web.Response(status=204, headers={"Cache-Control": "public, max-age=86400"})
+        return web.FileResponse(static / "bb-bike-logo.jpg", headers={"Cache-Control": "public, max-age=86400"})
 
     async def state(request):
         nonlocal bot_username_cache

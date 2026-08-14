@@ -5,12 +5,15 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
   <meta name="theme-color" content="#07110b">
   <title>Квест bb.bike · Красная Поляна</title>
+  <link rel="icon" href="/static/bb-bike-logo.jpg">
+  <link rel="stylesheet" href="/static/vendor/leaflet.css">
   <link rel="stylesheet" href="/static/app.css">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="/static/vendor/leaflet.js"></script>
 </head>
 <body>
 <main class="app"><div class="shell" id="root" aria-live="polite">
-  <div class="topbar"><div class="brand"><span class="brand-mark">bb.</span><span>Квест</span></div></div>
+  <div class="topbar"><div class="brand"><img class="brand-logo" src="/static/bb-bike-logo.jpg" alt="BibiBike"><span>Квест</span></div></div>
   <section class="screen"><p class="eyebrow">Красная Поляна</p><h1>Готовим маршрут</h1><p class="lead">Подключаем прогресс и подарки.</p></section>
 </div></main>
 <div id="modal"></div><div id="toast" class="toast hidden" role="status"></div>
@@ -18,7 +21,7 @@
 const tg = window.Telegram?.WebApp;
 const DEV = new URLSearchParams(location.search).get('dev') === '1';
 const initData = tg?.initData || (DEV ? 'dev' : '');
-let state = null, botUsername = '', lastCompleted = 0;
+let state = null, botUsername = '', lastCompleted = 0, questMap = null;
 const root = document.getElementById('root'), modal = document.getElementById('modal');
 const esc = v => String(v ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const icon = (name) => ({check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m5 12 4 4L19 6"/></svg>',pin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>'}[name] || '');
@@ -31,13 +34,15 @@ async function api(path, options={}) {
   return payload;
 }
 function toast(text){ const el=document.getElementById('toast'); el.textContent=text; el.classList.remove('hidden'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.add('hidden'),3200); }
-function topbar(status=''){ return `<div class="topbar"><div class="brand"><span class="brand-mark">bb.</span><span>Квест</span></div>${status?`<span class="chip good">${esc(status)}</span>`:''}</div>`; }
+function topbar(status=''){ return `<div class="topbar"><div class="brand"><img class="brand-logo" src="/static/bb-bike-logo.jpg" alt="BibiBike"><span>Квест</span></div>${status?`<span class="chip good">${esc(status)}</span>`:''}</div>`; }
 function show(html){ root.innerHTML=html; window.scrollTo({top:0,behavior:'instant'}); tg?.HapticFeedback?.impactOccurred('light'); }
 function formatDistance(m){ if(m==null)return '—'; return m<1000?Math.round(m)+' м':(m/1000).toFixed(1).replace('.',',')+' км'; }
 function completedCount(){ return (state?.points||[]).filter(p=>p.completed_at).length; }
 
 function welcome(){
- show(`${topbar()}<section class="screen hero"><p class="eyebrow">Квест · Красная Поляна</p><h1>Три места. Три подарка. Месяц премиума.</h1><p class="lead">Возьми Бибибайк, проедь три партнёрские точки и забери скидки по пути.</p><div class="hero-visual" aria-hidden="true"><div class="route-dots"><i></i><i></i><i></i></div></div><div class="facts"><div class="fact"><strong>3</strong><span>остановки</span></div><div class="fact"><strong>3</strong><span>подарка</span></div><div class="fact"><strong>30</strong><span>дней премиума</span></div></div><button class="btn primary" onclick="beforeStart()">Начать квест</button><button class="btn ghost" onclick="rules()">Как это работает</button><p class="footnote">Смотри маршрут только после полной остановки.</p></section>`);
+ const distance=state?.campaign?.route_distance_m?formatDistance(state.campaign.route_distance_m):'3 точки';
+ show(`${topbar()}<section class="screen hero"><img class="hero-logo" src="/static/bb-bike-logo.jpg" alt="BibiBike"><p class="eyebrow">Квест · Красная Поляна</p><h1>Три места. Три подарка. Месяц премиума.</h1><p class="lead">Возьми Бибибайк, проедь три партнёрские точки и забери подарки по пути.</p><div class="hero-visual"><div id="preview-map" class="quest-map" aria-label="Предпросмотр маршрута"></div></div><div class="facts"><div class="fact"><strong>${esc(distance)}</strong><span>маршрут</span></div><div class="fact"><strong>3</strong><span>подарка</span></div><div class="fact"><strong>30</strong><span>дней премиума</span></div></div><button class="btn primary" onclick="beforeStart()">Начать квест</button><button class="btn ghost" onclick="rules()">Как это работает</button><p class="footnote">Смотри маршрут только после полной остановки.</p></section>`);
+ requestAnimationFrame(initPreviewMap);
 }
 function beforeStart(){
  show(`${topbar()}<section class="screen"><p class="eyebrow">Подготовка</p><h1>Перед стартом</h1><div class="steps"><div class="step"><span class="step-num">1</span><p><b>Возьми байк</b><br><span class="muted">Открой аренду в приложении bb.bike.</span></p></div><div class="step"><span class="step-num">2</span><p><b>Включи геопозицию</b><br><span class="muted">Она нужна только во время квеста.</span></p></div><div class="step"><span class="step-num">3</span><p><b>Остановись на точке</b><br><span class="muted">QR партнёра подтвердит визит.</span></p></div></div><div class="card"><b>Твой маршрут остаётся приватным</b><p class="muted" style="margin:8px 0 0;line-height:1.45">Партнёры не видят геопозицию. Точные координаты удаляются после короткого срока хранения.</p></div><label class="check"><input id="privacy" type="checkbox"><span>Я согласен с <a href="/privacy.html" target="_blank">правилами использования геопозиции</a>.</span></label><button class="btn primary" onclick="startQuest()">Продолжить</button><button class="btn secondary" onclick="welcome()">Назад</button></section>`);
@@ -57,9 +62,26 @@ function route(){
  const done=completedCount(), p=currentPoint(), stale=state.location_stale;
  const future=state.points.filter(x=>x.seq>p.seq).map(x=>`<div class="card future-row"><span class="future-number">${x.seq}</span><div><b>${esc(x.point_name)}</b><p>${esc(x.reward_title)}</p></div><span aria-hidden="true">›</span></div>`).join('');
  const proof = p.location_seen_at && !p.qr_seen_at ? `<div class="banner">Ты уже был в радиусе точки. Осталось подтвердить QR партнёра.</div>` : (p.qr_seen_at&&!p.location_seen_at?`<div class="banner">QR сохранён. Подъедь в радиус 100 м — визит завершится автоматически.</div>`:'');
- show(`${topbar('Квест активен')}<section class="screen">${stale?`<div class="banner">Геопозиция давно не обновлялась. Пройденное сохранено. <button class="btn ghost" style="min-height:36px;padding:4px" onclick="waiting()">Как включить снова</button></div>`:''}<div class="progress-head"><div><p class="eyebrow">Твой маршрут</p><div class="progress-count">${done} из 3</div></div><button class="icon-btn" aria-label="Обновить" onclick="refresh()">↻</button></div><div class="progress-track">${[1,2,3].map(n=>`<i class="progress-segment ${n<=done?'done':n===done+1?'current':''}"></i>`).join('')}</div>${proof}<div class="card current-card"><div class="card-label">Следующая точка</div><h2>${esc(p.point_name)}</h2><p class="address">${esc(p.address)}</p><div class="metric-row"><span class="distance">${formatDistance(p.distance_m)}</span><span class="freshness">${state.last_location_age_sec==null?'ждём координату':'обновлено '+Math.max(0,Math.round(state.last_location_age_sec/60))+' мин назад'}</span></div><div class="reward-teaser"><span>Здесь получишь</span><strong>${esc(p.reward_title)}</strong></div><button class="btn primary" onclick="openMap(${p.seq})">Построить маршрут</button><button class="btn secondary" onclick="openScan()">Я на месте: подтвердить QR</button></div>${future}<p class="safety">Остановись и припаркуй байк, прежде чем смотреть в телефон.</p></section>`);
+ show(`${topbar('Квест активен')}<section class="screen">${stale?`<div class="banner">Геопозиция давно не обновлялась. Пройденное сохранено. <button class="btn ghost" style="min-height:36px;padding:4px" onclick="waiting()">Как включить снова</button></div>`:''}<div class="progress-head"><div><p class="eyebrow">Твой маршрут</p><div class="progress-count">${done} из 3</div></div><button class="icon-btn" aria-label="Обновить" onclick="refresh()">↻</button></div><div class="progress-track">${[1,2,3].map(n=>`<i class="progress-segment ${n<=done?'done':n===done+1?'current':''}"></i>`).join('')}</div><div class="map-shell"><div id="quest-map" class="quest-map" aria-label="Карта маршрута"></div><div class="map-overlay"><span class="map-pill">${done}/3 пройдено</span><span class="map-pill">${state.last_location_age_sec==null?'ожидаем гео':'гео онлайн'}</span></div></div>${proof}<div class="route-sheet"><div class="card-label">Следующая точка</div><h2>${esc(p.point_name)}</h2><p class="address">${esc(p.address)}</p><div class="metric-row"><span class="distance">${formatDistance(p.distance_m)}</span><span class="freshness">${state.last_location_age_sec==null?'ждём координату':'обновлено '+Math.max(0,Math.round(state.last_location_age_sec/60))+' мин назад'}</span></div><div class="reward-teaser"><span>Здесь получишь</span><strong>${esc(p.reward_title)}</strong></div><button class="btn primary" onclick="chooseRoute(${p.seq})">Построить маршрут</button><button class="btn secondary" onclick="openScan()">Я на месте: подтвердить QR</button></div>${future}<p class="safety">Остановись и припаркуй байк, прежде чем смотреть в телефон.</p></section>`);
+ requestAnimationFrame(initQuestMap);
 }
-function openMap(seq){ const p=state.points.find(x=>x.seq===seq); if(!p)return; const url=p.map_url||('https://yandex.ru/maps/?text='+encodeURIComponent(p.address)); tg?.openLink?tg.openLink(url):window.open(url); }
+function markerIcon(type,label){return L.divIcon({className:'',html:`<div class="map-pin ${type}"><span>${label}</span></div>`,iconSize:[34,34],iconAnchor:[17,34]});}
+function initPreviewMap(){const node=document.getElementById('preview-map');if(!node||!window.L||!state?.points?.length)return;if(questMap){questMap.remove();questMap=null}questMap=L.map(node,{zoomControl:false,attributionControl:true,dragging:false,scrollWheelZoom:false,doubleClickZoom:false,touchZoom:false});L.tileLayer(state.map?.tile_url||'https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:state.map?.attribution||'© OpenStreetMap contributors'}).addTo(questMap);const bounds=[];state.points.forEach(p=>{const ll=[p.latitude,p.longitude];bounds.push(ll);L.marker(ll,{icon:markerIcon('current',p.seq),interactive:false}).addTo(questMap)});questMap.fitBounds(bounds,{padding:[28,28],maxZoom:14})}
+function initQuestMap(){
+ const node=document.getElementById('quest-map'); if(!node||!window.L)return;
+ if(questMap){questMap.remove();questMap=null;}
+ questMap=L.map(node,{zoomControl:false,attributionControl:true});
+ L.tileLayer(state.map?.tile_url||'https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:state.map?.attribution||'© OpenStreetMap contributors'}).addTo(questMap);
+ const bounds=[]; const done=completedCount();
+ state.points.forEach(p=>{const ll=[p.latitude,p.longitude];bounds.push(ll);L.marker(ll,{icon:markerIcon(p.completed_at?'done':p.seq===done+1?'current':'',p.completed_at?'✓':p.seq)}).addTo(questMap).bindPopup(`<b>${esc(p.point_name)}</b><br>${esc(p.reward_title)}`);});
+ const s=state.session;if(s?.last_latitude!=null){const ll=[s.last_latitude,s.last_longitude];bounds.push(ll);L.marker(ll,{icon:L.divIcon({className:'',html:'<div class="map-user"></div>',iconSize:[22,22],iconAnchor:[11,11]}),zIndexOffset:1000}).addTo(questMap).bindTooltip('Ты здесь');const p=currentPoint();if(p)L.polyline([ll,[p.latitude,p.longitude]],{color:'#24c942',weight:4,dashArray:'7 9',opacity:.85}).addTo(questMap);}
+ if(bounds.length)questMap.fitBounds(bounds,{padding:[38,38],maxZoom:15});else questMap.setView([43.68,40.205],13);
+}
+function chooseRoute(seq){
+ const p=state.points.find(x=>x.seq===seq);if(!p)return;
+ modal.innerHTML=`<div class="modal" onclick="if(event.target===this)closeModal()"><section class="sheet"><div class="sheet-head"><div><p class="eyebrow">Маршрут</p><h2 style="margin:0">Как поедем?</h2></div><button class="icon-btn" onclick="closeModal()">×</button></div><p class="muted">Яндекс Карты построят путь от твоей последней геопозиции до ${esc(p.point_name)}.</p><div class="route-choice"><button class="btn primary" onclick="openRoute(${seq},'bc')"><span>На Бибибайке</span><b>веломаршрут →</b></button><button class="btn secondary" onclick="openRoute(${seq},'pd')"><span>Пешком</span><b>пеший маршрут →</b></button><button class="btn ghost" onclick="openRoute(${seq},'auto')"><span>На машине</span><b>автомаршрут →</b></button></div></section></div>`;
+}
+function openRoute(seq,mode){const p=state.points.find(x=>x.seq===seq);if(!p)return;const s=state.session,finish=`${p.latitude},${p.longitude}`;let url;if(s?.last_latitude!=null){const start=`${s.last_latitude},${s.last_longitude}`;url=`https://yandex.ru/maps/?rtext=${encodeURIComponent(start+'~'+finish)}&rtt=${mode}`;}else url=p.map_url||`https://yandex.ru/maps/?pt=${p.longitude},${p.latitude}&z=17`;closeModal();tg?.openLink?tg.openLink(url):window.open(url,'_blank','noopener');}
 function openScan(){
  const p=currentPoint();
  if(tg?.showScanQrPopup){ tg.showScanQrPopup({text:'Отсканируй QR у стойки '+p.point_name}, value=>{ tg.closeScanQrPopup(); submitQr(value); return true; }); }

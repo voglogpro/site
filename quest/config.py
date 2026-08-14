@@ -40,6 +40,8 @@ class Settings:
     location_stale_sec: int
     location_retention_days: int
     support_url: str
+    map_tile_url: str
+    map_attribution: str
     dev_mode: bool
     dev_user_id: int
 
@@ -92,6 +94,8 @@ def load_settings() -> Settings:
         location_stale_sec=int(os.getenv("LOCATION_STALE_SEC", "300")),
         location_retention_days=int(os.getenv("LOCATION_RETENTION_DAYS", "7")),
         support_url=os.getenv("SUPPORT_URL", "https://t.me/bbbike_support"),
+        map_tile_url=os.getenv("MAP_TILE_URL", "https://tile.openstreetmap.org/{z}/{x}/{y}.png"),
+        map_attribution=os.getenv("MAP_ATTRIBUTION", "© OpenStreetMap contributors"),
         dev_mode=dev_mode,
         dev_user_id=dev_user_id,
     )

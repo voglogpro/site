@@ -34,6 +34,9 @@ async def main() -> None:
             state = await service.state(identity)
             assert state["campaign"]["status"] == "draft"
             assert len(state["points"]) == 3
+            assert all("latitude" in point and "longitude" in point for point in state["points"])
+            assert state["map"]["tile_url"].startswith("https://")
+            assert state["campaign"]["route_distance_m"] > 0
             try:
                 await service.start(identity, True)
             except QuestError as exc:
@@ -43,6 +46,8 @@ async def main() -> None:
             assert haversine_m(43.68, 40.205, 43.68, 40.205) == 0
 
             overview = await service.admin_overview()
+            assert overview["funnel"]["started"] == 0
+            assert "map" in overview
             qr_codes = []
             for point in overview["points"]:
                 await service.admin_update_point(settings.dev_user_id, point["id"], {
@@ -60,6 +65,7 @@ async def main() -> None:
             state = await service.start(identity, True)
             assert state["session"]["status"] == "awaiting_location"
             overview = await service.admin_overview()
+            assert overview["funnel"]["started"] == 1
             for index, point in enumerate(overview["points"]):
                 state = await service.record_location(
                     identity.user_id, point["latitude"], point["longitude"], 10,
@@ -69,6 +75,11 @@ async def main() -> None:
             assert state["session"]["status"] == "completed"
             assert len([p for p in state["points"] if p["completed_at"]]) == 3
             assert state["premium"]["status"] == "pending"
+            overview = await service.admin_overview()
+            assert overview["funnel"]["reached_point_1"] == 1
+            assert overview["funnel"]["reached_point_2"] == 1
+            assert overview["funnel"]["reached_point_3"] == 1
+            assert overview["funnel"]["rewarded_users"] == 1
             duplicate = await service.scan(identity, qr_codes[-1], "smoke-qr-2")
             assert duplicate["session"]["status"] == "completed"
             entitlements = await db.fetchone("SELECT COUNT(*) count FROM premium_entitlements WHERE session_id=?", (state["session"]["id"],))
