@@ -93,7 +93,7 @@ quest/security.py       Telegram HMAC и QR digest
 quest/service.py        состояния, геозона, QR, награды
 quest/api.py            Mini App и admin API
 quest/bot.py            команды и Live Location handlers
-static/index.html       Mini App участника
+index.html              входной файл Mini App в корне для BotHost
 static/admin.html       CRM администратора
 static/app.css          единая дизайн-система
 static/bb-bike-logo.jpg фирменный знак из предоставленного макета

@@ -97,7 +97,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
     app = web.Application(middlewares=[error_middleware, security_middleware], client_max_size=256 * 1024)
 
     async def index(_):
-        return web.FileResponse(static / "index.html", headers={"Cache-Control": "no-cache"})
+        return web.FileResponse(root / "index.html", headers={"Cache-Control": "no-cache"})
 
     async def admin_page(_):
         return web.FileResponse(static / "admin.html", headers={"Cache-Control": "no-cache"})
