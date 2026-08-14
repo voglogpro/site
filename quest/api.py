@@ -88,7 +88,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(self), camera=(self)"
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self' https://telegram.org; script-src 'self' 'unsafe-inline' https://telegram.org; "
+            "default-src 'self' https://telegram.org; script-src 'self' 'unsafe-inline' https://telegram.org https://unpkg.com; "
             "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; "
             "connect-src 'self'; frame-ancestors 'self' https://web.telegram.org"
         )

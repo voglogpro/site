@@ -97,7 +97,7 @@ index.html              входной файл Mini App в корне для Bo
 static/admin.html       CRM администратора
 static/app.css          единая дизайн-система
 static/bb-bike-logo.jpg фирменный знак из предоставленного макета
-static/vendor/          локально подключённая библиотека карты Leaflet
+static/vendor/          стили и лицензия библиотеки карты Leaflet
 static/privacy.html     понятное уведомление о данных
 ```
 
