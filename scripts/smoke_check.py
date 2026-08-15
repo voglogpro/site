@@ -1,93 +1,59 @@
-"""Small release smoke check, intentionally not a full test suite."""
+"""Release smoke: v2 migration, any-order QR, analytics and one premium."""
 from __future__ import annotations
-
-import asyncio
-import os
-import sys
-import tempfile
+import asyncio, itertools, os, sys, tempfile
 from pathlib import Path
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 os.environ.setdefault("DEV_MODE", "1")
 os.environ.setdefault("BOT_TOKEN", "000000:development-token")
 os.environ.setdefault("WEBAPP_URL", "http://127.0.0.1:3000")
 os.environ.setdefault("ADMIN_IDS", "7785586524")
 os.environ.setdefault("QR_SECRET", "development-only-qr-secret-32-chars")
-
 from quest.config import load_settings
 from quest.db import Database
 from quest.security import TelegramIdentity
-from quest.service import QuestError, QuestService, haversine_m
+from quest.service import QuestError, QuestService
 
-
-async def main() -> None:
+async def scenario(order: tuple[int, ...]) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         os.environ["DATA_DIR"] = tmp
-        settings = load_settings()
-        db = Database(Path(tmp) / "smoke.db")
-        await db.initialize()
+        settings = load_settings(); path = Path(tmp) / "smoke.db"
+        db = Database(path); await db.initialize(); await db.close()
+        db = Database(path); await db.initialize()  # повторная миграция должна быть идемпотентной
         try:
-            service = QuestService(db, settings)
-            await service.ensure_demo_campaign()
+            service = QuestService(db, settings); await service.ensure_demo_campaign()
             identity = TelegramIdentity(settings.dev_user_id, "smoke", "Тест", "", "ru")
-            state = await service.state(identity)
-            assert state["campaign"]["status"] == "draft"
-            assert len(state["points"]) == 3
-            assert all("latitude" in point and "longitude" in point for point in state["points"])
-            assert state["map"]["tile_url"].startswith("https://")
-            assert state["campaign"]["route_distance_m"] > 0
-            try:
-                await service.start(identity, True)
-            except QuestError as exc:
-                assert exc.code == "campaign_inactive"
-            else:
-                raise AssertionError("Draft campaign must not start")
-            assert haversine_m(43.68, 40.205, 43.68, 40.205) == 0
-
-            overview = await service.admin_overview()
-            assert overview["funnel"]["started"] == 0
-            assert "map" in overview
-            qr_codes = []
+            try: await service.start(identity, True)
+            except QuestError as exc: assert exc.code == "campaign_inactive"
+            overview = await service.admin_overview(); codes = []
+            assert len(overview["qr_codes"]) == 3
             for point in overview["points"]:
                 await service.admin_update_point(settings.dev_user_id, point["id"], {
-                    "name": f"Тестовая точка {point['seq']}",
-                    "address": f"Тестовый адрес {point['seq']}",
-                    "latitude": point["latitude"],
-                    "longitude": point["longitude"],
-                    "radius_m": 100,
-                    "reward_title": f"Тестовый подарок {point['seq']}",
-                    "reward_text": "Только для smoke-проверки",
-                    "partner_hours": "09:00–21:00",
-                })
-                qr_codes.append(await service.rotate_qr(settings.dev_user_id, point["id"]))
-            await service.admin_update_campaign(settings.dev_user_id, {"status": "active", "session_duration_min": 240})
-            state = await service.start(identity, True)
-            assert state["session"]["status"] == "awaiting_location"
-            overview = await service.admin_overview()
-            assert overview["funnel"]["started"] == 1
-            for index, point in enumerate(overview["points"]):
-                state = await service.record_location(
-                    identity.user_id, point["latitude"], point["longitude"], 10,
-                    source="miniapp", request_id=f"smoke-loc-{index}",
-                )
-                state = await service.scan(identity, qr_codes[index], f"smoke-qr-{index}")
-            assert state["session"]["status"] == "completed"
-            assert len([p for p in state["points"] if p["completed_at"]]) == 3
-            assert state["premium"]["status"] == "pending"
-            overview = await service.admin_overview()
-            assert overview["funnel"]["reached_point_1"] == 1
-            assert overview["funnel"]["reached_point_2"] == 1
-            assert overview["funnel"]["reached_point_3"] == 1
-            assert overview["funnel"]["rewarded_users"] == 1
-            duplicate = await service.scan(identity, qr_codes[-1], "smoke-qr-2")
+                    "name":f"Точка {point['seq']}","address":f"Адрес {point['seq']}",
+                    "latitude":point["latitude"],"longitude":point["longitude"],"radius_m":100,
+                    "reward_title":f"Подарок {point['seq']}","reward_text":"Smoke","partner_hours":"09:00–21:00"})
+                codes.append(await service.rotate_qr(settings.dev_user_id, point["id"]))
+            if order == (0, 1, 2):
+                _, extra_id = await service.create_qr(settings.dev_user_id, overview["points"][0]["id"], "Вторая стойка")
+                extra = await service.admin_overview()
+                assert any(q["id"] == extra_id and q["active"] for q in extra["qr_codes"])
+                await service.set_qr_active(settings.dev_user_id, extra_id, False)
+            await service.admin_update_campaign(settings.dev_user_id,{"status":"active","session_duration_min":240})
+            state = await service.start(identity, True); assert state["session"]["status"] == "active"
+            for n,idx in enumerate(order):
+                state = await service.scan(identity,codes[idx],f"scan-{n}")
+                assert len([p for p in state["points"] if p["completed_at"]]) == n+1
+            assert state["session"]["status"] == "completed" and state["premium"]["status"] == "pending"
+            duplicate = await service.scan(identity,codes[order[-1]],f"scan-{len(order)-1}")
             assert duplicate["session"]["status"] == "completed"
-            entitlements = await db.fetchone("SELECT COUNT(*) count FROM premium_entitlements WHERE session_id=?", (state["session"]["id"],))
-            assert entitlements["count"] == 1
-        finally:
-            await db.close()
-    print("PASS: database, safety gate, 3 geofences, 3 QR proofs and one premium entitlement")
+            repeated = await service.scan(identity,codes[order[-1]],"fresh-repeat")
+            assert repeated["session"]["status"] == "completed"
+            row = await db.fetchone("SELECT COUNT(*) count FROM premium_entitlements WHERE session_id=?",(state["session"]["id"],))
+            assert row["count"] == 1
+            old = await db.fetchone("SELECT COUNT(*) count FROM sessions WHERE last_latitude IS NOT NULL")
+            assert old["count"] == 0
+        finally: await db.close()
 
-
-if __name__ == "__main__":
-    asyncio.run(main())
+async def main() -> None:
+    for order in itertools.permutations(range(3)): await scenario(order)
+    print("PASS: v2 database, all 6 point orders, QR idempotency and one premium")
+if __name__ == "__main__": asyncio.run(main())

@@ -15,7 +15,7 @@ from quest.config import load_settings
 from quest.db import Database
 from quest.service import QuestService
 
-BUILD_VERSION = "2026-08-14 · Krasnaya Polyana Quest 1.1 · карта и CRM"
+BUILD_VERSION = "2026-08-15 · Krasnaya Polyana Quest 2.0 · свободный маршрут"
 
 
 async def run() -> None:
@@ -52,7 +52,7 @@ async def run() -> None:
             pass
 
     polling = asyncio.create_task(
-        dp.start_polling(bot, allowed_updates=["message", "edited_message", "callback_query"]),
+        dp.start_polling(bot, allowed_updates=["message", "callback_query"]),
         name="telegram-polling",
     )
     janitor = asyncio.create_task(service.janitor(stop), name="privacy-janitor")

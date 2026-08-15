@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 import aiosqlite
@@ -148,6 +149,33 @@ CREATE TABLE IF NOT EXISTS admin_audit (
     after_json TEXT,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS point_qr_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    point_id INTEGER NOT NULL REFERENCES points(id) ON DELETE CASCADE,
+    label TEXT NOT NULL DEFAULT 'Основной QR',
+    code_hash TEXT NOT NULL,
+    manual_code TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+    scan_count INTEGER NOT NULL DEFAULT 0,
+    last_scanned_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(point_id, manual_code)
+);
+CREATE INDEX IF NOT EXISTS point_qr_point_active ON point_qr_codes(point_id, active);
+
+CREATE TABLE IF NOT EXISTS quest_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL,
+    event_type TEXT NOT NULL CHECK(event_type IN ('catalog_open','point_view','navigator_open','qr_open')),
+    point_id INTEGER REFERENCES points(id) ON DELETE SET NULL,
+    navigator TEXT NOT NULL DEFAULT '',
+    request_id TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS quest_events_type_time ON quest_events(event_type, created_at);
 """
 
 
@@ -164,8 +192,18 @@ class Database:
         await self._db.execute("PRAGMA foreign_keys=ON")
         await self._db.execute("PRAGMA busy_timeout=10000")
         await self._db.executescript(SCHEMA)
+        # Миграция v2 совместима с уже работающей БД: старые QR становятся
+        # первым активным QR новой панели, а ожидающие Live Location сессии
+        # сразу продолжают работать в упрощённом сценарии.
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         await self._db.execute(
-            "INSERT INTO schema_meta(key,value) VALUES('version','1') ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+            """INSERT OR IGNORE INTO point_qr_codes(point_id,label,code_hash,manual_code,active,created_at,updated_at)
+               SELECT id,'Основной QR',qr_code_hash,qr_public_hint,1,?,? FROM points""",
+            (now, now),
+        )
+        await self._db.execute("UPDATE sessions SET status='active' WHERE status='awaiting_location'")
+        await self._db.execute(
+            "INSERT INTO schema_meta(key,value) VALUES('version','2') ON CONFLICT(key) DO UPDATE SET value=excluded.value"
         )
         await self._db.commit()
 

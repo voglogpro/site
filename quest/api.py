@@ -134,19 +134,23 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         data = await service.start(identity, bool(body.get("privacy_accepted")))
         return json_response({"data": data}, 201)
 
-    async def location(request):
+    async def event(request):
         identity = request_identity(request, settings)
-        if not limiter.allow(f"location:{identity.user_id}", 30):
-            raise QuestError("rate_limited", "Слишком много обновлений геопозиции.", 429)
+        if not limiter.allow(f"event:{identity.user_id}", 90):
+            raise QuestError("rate_limited", "Слишком много запросов.", 429)
         body = await json_body(request)
         try:
-            latitude, longitude = float(body["latitude"]), float(body["longitude"])
-            accuracy = float(body["accuracy_m"]) if body.get("accuracy_m") is not None else None
-        except (KeyError, TypeError, ValueError):
-            raise QuestError("invalid_location", "Не удалось прочитать координаты.")
-        data = await service.record_location(identity.user_id, latitude, longitude, accuracy,
-            source="miniapp", request_id=str(body.get("request_id") or uuid.uuid4()))
-        return json_response({"data": data})
+            point_id = int(body["point_id"]) if body.get("point_id") is not None else None
+        except (TypeError, ValueError):
+            raise QuestError("invalid_event", "Некорректное событие.")
+        await service.record_event(
+            identity,
+            str(body.get("event_type") or ""),
+            str(body.get("request_id") or uuid.uuid4()),
+            point_id,
+            str(body.get("navigator") or ""),
+        )
+        return json_response({})
 
     async def scan(request):
         identity = request_identity(request, settings)
@@ -156,10 +160,11 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         data = await service.scan(identity, str(body.get("qr_code") or ""), str(body.get("request_id") or uuid.uuid4()))
         completed = data.get("event", {}).get("point_completed")
         if completed:
-            if completed >= 3:
+            completed_count = len([point for point in data.get("points", []) if point.get("completed_at")])
+            if completed_count >= 3:
                 text = "<b>Маршрут пройден</b>\n\nВсе три точки подтверждены. Финальная награда уже в приложении."
             else:
-                text = f"<b>Точка {completed} подтверждена</b>\n\nПодарок сохранён. Можно ехать дальше."
+                text = f"<b>Точка {completed} подтверждена</b>\n\nПодарок сохранён. Пройдено {completed_count} из 3 — следующую точку можно выбрать самому."
             try:
                 await bot.send_message(identity.user_id, text)
             except Exception as exc:
@@ -188,6 +193,23 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         encoded = base64.b64encode(stream.getvalue()).decode("ascii")
         return json_response({"qr_code": raw, "manual_code": raw[-6:].upper(), "qr_png": "data:image/png;base64," + encoded, "point_id": point_id})
 
+    async def admin_create_qr(request):
+        admin = require_admin(request, settings)
+        point_id = int(request.match_info["point_id"])
+        body = await json_body(request)
+        raw, qr_id = await service.create_qr(admin.user_id, point_id, str(body.get("label") or ""))
+        image = qrcode.make(raw)
+        stream = io.BytesIO()
+        image.save(stream, format="PNG")
+        encoded = base64.b64encode(stream.getvalue()).decode("ascii")
+        return json_response({"qr_id": qr_id, "qr_code": raw, "manual_code": raw[-6:].upper(), "qr_png": "data:image/png;base64," + encoded, "point_id": point_id})
+
+    async def admin_qr_status(request):
+        admin = require_admin(request, settings)
+        body = await json_body(request)
+        data = await service.set_qr_active(admin.user_id, int(request.match_info["qr_id"]), bool(body.get("active")))
+        return json_response({"data": data})
+
     async def admin_premium(request):
         admin = require_admin(request, settings)
         await service.mark_premium_issued(admin.user_id, request.match_info["session_id"])
@@ -213,12 +235,14 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
     app.router.add_get("/favicon.ico", favicon)
     app.router.add_get("/api/quest/state", state)
     app.router.add_post("/api/quest/start", start)
-    app.router.add_post("/api/quest/location", location)
+    app.router.add_post("/api/quest/event", event)
     app.router.add_post("/api/quest/scan", scan)
     app.router.add_get("/api/admin/overview", admin_overview)
     app.router.add_post("/api/admin/campaign", admin_campaign)
     app.router.add_post("/api/admin/points/{point_id}", admin_point)
     app.router.add_post("/api/admin/points/{point_id}/rotate-qr", admin_rotate_qr)
+    app.router.add_post("/api/admin/points/{point_id}/qr", admin_create_qr)
+    app.router.add_post("/api/admin/qr/{qr_id}/status", admin_qr_status)
     app.router.add_post("/api/admin/premium/{session_id}/issued", admin_premium)
     app.router.add_get("/api/admin/export.csv", admin_export)
     app.router.add_static("/static/", static, show_index=False, append_version=True)

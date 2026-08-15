@@ -49,6 +49,9 @@ class QuestError(Exception):
 
 
 class QuestService:
+    # Рабочий прямоугольник курортного кластера: Красная Поляна,
+    # Эсто-Садок и горные курорты. Сервер повторяет ограничение CRM-карты.
+    POLYANA_BOUNDS = ((43.60, 40.10), (43.77, 40.37))
     def __init__(self, db: Database, settings: Settings):
         self.db = db
         self.settings = settings
@@ -77,10 +80,17 @@ class QuestService:
             ]
             for seq, name, address, lat, lon, reward in demo:
                 raw = secrets.token_urlsafe(24)
-                await db.execute(
+                digest = qr_digest(self.settings.qr_secret, raw)
+                manual = raw[-6:].upper()
+                point_cursor = await db.execute(
                     """INSERT INTO points(campaign_id,seq,name,address,latitude,longitude,radius_m,reward_title,reward_text,qr_code_hash,qr_public_hint,active,created_at,updated_at)
                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (campaign_id, seq, name, address, lat, lon, 100, reward, "Настройте реальную скидку и условия в админке.", qr_digest(self.settings.qr_secret, raw), raw[-6:].upper(), 1, now, now),
+                    (campaign_id, seq, name, address, lat, lon, 100, reward, "Настройте реальную скидку и условия в админке.", digest, manual, 1, now, now),
+                )
+                await db.execute(
+                    """INSERT INTO point_qr_codes(point_id,label,code_hash,manual_code,active,created_at,updated_at)
+                       VALUES(?,'Основной QR',?,?,1,?,?)""",
+                    (point_cursor.lastrowid, digest, manual, now, now),
                 )
 
     async def upsert_participant(self, identity: TelegramIdentity, privacy: bool = False) -> None:
@@ -100,7 +110,7 @@ class QuestService:
 
     async def start(self, identity: TelegramIdentity, privacy_accepted: bool) -> dict:
         if not privacy_accepted:
-            raise QuestError("privacy_required", "Нужно согласиться с правилами геопозиции.")
+            raise QuestError("rules_required", "Нужно согласиться с правилами квеста.")
         await self.upsert_participant(identity, True)
         async with self.lock_for(identity.user_id):
             async with self.db.transaction() as db:
@@ -123,7 +133,7 @@ class QuestService:
                 await db.execute(
                     """INSERT INTO sessions(id,campaign_id,user_id,status,current_seq,started_at,expires_at)
                        VALUES(?,?,?,?,?,?,?)""",
-                    (session_id, campaign["id"], identity.user_id, "awaiting_location", 1, iso(started), iso(expires)),
+                    (session_id, campaign["id"], identity.user_id, "active", 1, iso(started), iso(expires)),
                 )
                 for point in points:
                     await db.execute(
@@ -172,11 +182,12 @@ class QuestService:
         for point in points:
             item = row_dict(point)
             item.pop("id", None)
-            if session and session["last_latitude"] is not None:
-                item["distance_m"] = round(haversine_m(session["last_latitude"], session["last_longitude"], point["latitude"], point["longitude"]))
-            else:
-                item["distance_m"] = None
+            # Расстояние теперь вычисляется только на устройстве пользователя.
+            # Координата участника не отправляется и не хранится на сервере.
+            item["distance_m"] = None
             item["map_url"] = f"https://yandex.ru/maps/?pt={point['longitude']},{point['latitude']}&z=17&l=map"
+            item["yandex_route_url"] = f"https://yandex.ru/maps/?rtext=~{point['latitude']},{point['longitude']}&rtt=bc"
+            item["dgis_route_url"] = f"https://2gis.ru/routeSearch/to/{point['longitude']},{point['latitude']}/go"
             if previous_point:
                 route_distance_m += haversine_m(
                     previous_point["latitude"], previous_point["longitude"],
@@ -187,16 +198,21 @@ class QuestService:
         entitlement = None
         if session:
             entitlement = await (await db.execute("SELECT public_code,status FROM premium_entitlements WHERE session_id=?", (session["id"],))).fetchone()
+        session_data = row_dict(session)
+        if session_data:
+            for key in ("live_chat_id", "live_message_id", "last_location_at", "last_latitude", "last_longitude"):
+                session_data.pop(key, None)
         return {
             "campaign": {
                 "title": campaign["title"], "city": campaign["city"], "status": campaign["status"],
                 "premium_title": campaign["premium_title"], "premium_instruction": campaign["premium_instruction"],
                 "route_distance_m": round(route_distance_m),
             },
-            "session": row_dict(session),
+            "session": session_data,
             "points": point_data,
             "last_location_age_sec": last_age,
-            "location_stale": bool(session and (last_age is None or last_age > self.settings.location_stale_sec)),
+            "location_stale": False,
+            "location_mode": "optional_local_once",
             "premium": row_dict(entitlement),
             "support_url": self.settings.support_url,
             "map": {"tile_url": self.settings.map_tile_url, "attribution": self.settings.map_attribution},
@@ -276,7 +292,7 @@ class QuestService:
 
     async def scan(self, identity: TelegramIdentity, qr_code: str, request_id: str) -> dict:
         qr_code = qr_code.strip()
-        if not qr_code or len(qr_code) > 256:
+        if not qr_code or len(qr_code) > 256 or not request_id or len(request_id) > 80:
             raise QuestError("invalid_qr", "Код не распознан.")
         rejected = False
         completed_seq = None
@@ -294,21 +310,27 @@ class QuestService:
                         rejected = True
                     else:
                         return await self._state_in_tx(db, identity.user_id)
-                if session["status"] not in ("awaiting_location", "active") and not duplicate:
+                if session["status"] not in ("awaiting_location", "active", "completed") and not duplicate:
                     raise QuestError("no_active_session", "Активный квест не найден.", 409)
-                if rejected:
-                    current = None
-                else:
-                    current = await (await db.execute(
-                        """SELECT sp.*,p.qr_code_hash,p.qr_public_hint FROM session_points sp JOIN points p ON p.id=sp.point_id
-                           WHERE sp.session_id=? AND sp.seq=?""", (session["id"], session["current_seq"])
-                    )).fetchone()
+                current = None
                 if rejected:
                     pass
                 else:
                     digest = qr_digest(self.settings.qr_secret, qr_code)
-                    manual_ok = bool(current and len(qr_code) == 6 and hmac.compare_digest(qr_code.upper(), current["qr_public_hint"].upper()))
-                    accepted = bool(current and (hmac.compare_digest(digest, current["qr_code_hash"]) or manual_ok))
+                    candidates = await (await db.execute(
+                        """SELECT sp.*,q.id qr_id,q.code_hash,q.manual_code
+                           FROM session_points sp
+                           JOIN point_qr_codes q ON q.point_id=sp.point_id AND q.active=1
+                           WHERE sp.session_id=?
+                           ORDER BY sp.seq,q.id""",
+                        (session["id"],),
+                    )).fetchall()
+                    for candidate in candidates:
+                        manual_ok = len(qr_code) == 6 and hmac.compare_digest(qr_code.upper(), candidate["manual_code"].upper())
+                        if hmac.compare_digest(digest, candidate["code_hash"]) or manual_ok:
+                            current = candidate
+                            break
+                    accepted = current is not None
                     reason = "" if accepted else "wrong_point"
                     await db.execute(
                         "INSERT INTO qr_scans(session_id,point_id,token_fingerprint,request_id,scanned_at,accepted,reject_reason) VALUES(?,?,?,?,?,?,?)",
@@ -317,8 +339,15 @@ class QuestService:
                     if not accepted:
                         rejected = True
                     else:
-                        await db.execute("UPDATE session_points SET qr_seen_at=COALESCE(qr_seen_at,?) WHERE id=?", (iso(), current["id"]))
-                        if await self._try_complete_in_tx(db, session["id"], current["seq"]):
+                        await db.execute(
+                            "UPDATE point_qr_codes SET scan_count=scan_count+1,last_scanned_at=?,updated_at=? WHERE id=?",
+                            (iso(), iso(), current["qr_id"]),
+                        )
+                        if current["completed_at"]:
+                            completed_seq = None
+                        else:
+                            await db.execute("UPDATE session_points SET qr_seen_at=COALESCE(qr_seen_at,?) WHERE id=?", (iso(), current["id"]))
+                        if not current["completed_at"] and await self._try_complete_in_tx(db, session["id"], current["seq"]):
                             completed_seq = current["seq"]
             if rejected:
                 raise QuestError("wrong_qr", "Это код другой точки. Проверь табличку у стойки.", 409)
@@ -329,13 +358,16 @@ class QuestService:
 
     async def _try_complete_in_tx(self, db, session_id: str, seq: int) -> bool:
         point = await (await db.execute("SELECT * FROM session_points WHERE session_id=? AND seq=?", (session_id, seq))).fetchone()
-        if not point or point["completed_at"] or not point["location_seen_at"] or not point["qr_seen_at"]:
+        if not point or point["completed_at"] or not point["qr_seen_at"]:
             return False
         now = iso()
         reward_code = f"BB-{secrets.token_hex(3).upper()}"
         await db.execute("UPDATE session_points SET completed_at=?,reward_code=? WHERE id=? AND completed_at IS NULL", (now, reward_code, point["id"]))
-        session = await (await db.execute("SELECT * FROM sessions WHERE id=?", (session_id,))).fetchone()
-        if seq >= 3:
+        progress = await (await db.execute(
+            "SELECT COALESCE(SUM(completed_at IS NOT NULL),0) completed,COUNT(*) total FROM session_points WHERE session_id=?",
+            (session_id,),
+        )).fetchone()
+        if progress["completed"] >= progress["total"]:
             premium_code = f"KP-{secrets.token_hex(4).upper()}"
             await db.execute("UPDATE sessions SET status='completed',current_seq=4,completed_at=? WHERE id=?", (now, session_id))
             await db.execute(
@@ -343,7 +375,7 @@ class QuestService:
                 (session_id, premium_code, now),
             )
         else:
-            await db.execute("UPDATE sessions SET current_seq=? WHERE id=?", (seq + 1, session_id))
+            await db.execute("UPDATE sessions SET status='active',current_seq=? WHERE id=?", (min(3, progress["completed"] + 1), session_id))
         return True
 
     async def admin_overview(self) -> dict:
@@ -355,9 +387,10 @@ class QuestService:
         ))
         funnel = row_dict(await self.db.fetchone(
             """SELECT COUNT(*) started,
-               COALESCE(SUM(last_location_at IS NOT NULL),0) geo_connected,
-               COALESCE(SUM(current_seq >= 2),0) reached_point_1,
-               COALESCE(SUM(current_seq >= 3),0) reached_point_2,
+               COALESCE((SELECT COUNT(DISTINCT session_id) FROM quest_events WHERE event_type='point_view'),0) point_viewed,
+               COALESCE((SELECT COUNT(DISTINCT session_id) FROM quest_events WHERE event_type='navigator_open'),0) navigator_opened,
+               COALESCE(SUM((SELECT COUNT(*) FROM session_points sp WHERE sp.session_id=sessions.id AND sp.completed_at IS NOT NULL)>=1),0) reached_point_1,
+               COALESCE(SUM((SELECT COUNT(*) FROM session_points sp WHERE sp.session_id=sessions.id AND sp.completed_at IS NOT NULL)>=2),0) reached_point_2,
                COALESCE(SUM(status='completed'),0) reached_point_3
                FROM sessions"""
         ))
@@ -374,16 +407,23 @@ class QuestService:
         funnel.update(reward_metrics or {})
         funnel.update(premium_metrics or {})
         recent = [row_dict(r) for r in await self.db.fetchall(
-            """SELECT s.id,s.status,s.current_seq,s.started_at,s.completed_at,s.last_location_at,s.integrity_status,
+            """SELECT s.id,s.status,s.current_seq,s.started_at,s.completed_at,s.integrity_status,
+               (SELECT COUNT(*) FROM session_points sp WHERE sp.session_id=s.id AND sp.completed_at IS NOT NULL) completed_points,
                p.user_id,p.display_name,p.username,e.status premium_status,e.public_code premium_code
                FROM sessions s JOIN participants p ON p.user_id=s.user_id
                LEFT JOIN premium_entitlements e ON e.session_id=s.id
                ORDER BY s.started_at DESC LIMIT 500"""
         )]
+        qr_codes = [row_dict(r) for r in await self.db.fetchall(
+            """SELECT q.id,q.point_id,q.label,q.manual_code,q.active,q.scan_count,q.last_scanned_at,q.created_at,
+                      p.seq,p.name point_name
+               FROM point_qr_codes q JOIN points p ON p.id=q.point_id ORDER BY p.seq,q.id"""
+        )]
         return {
             "campaign": campaign, "points": points, "metrics": metrics, "funnel": funnel,
-            "recent": recent,
+            "recent": recent, "qr_codes": qr_codes,
             "map": {"tile_url": self.settings.map_tile_url, "attribution": self.settings.map_attribution},
+            "map_bounds": {"south": self.POLYANA_BOUNDS[0][0], "west": self.POLYANA_BOUNDS[0][1], "north": self.POLYANA_BOUNDS[1][0], "east": self.POLYANA_BOUNDS[1][1]},
         }
 
     async def participant_brief(self, user_id: int) -> dict | None:
@@ -435,8 +475,10 @@ class QuestService:
             hours = str(payload.get("partner_hours", "")).strip()[:120]
         except (KeyError, TypeError, ValueError):
             raise QuestError("invalid_point", "Заполни все обязательные поля.")
-        if not all((name, address, reward_title, reward_text)) or not -90 <= latitude <= 90 or not -180 <= longitude <= 180 or not 30 <= radius <= 500:
-            raise QuestError("invalid_point", "Проверь адрес, координаты, радиус и награду.")
+        south_west, north_east = self.POLYANA_BOUNDS
+        in_polyana = south_west[0] <= latitude <= north_east[0] and south_west[1] <= longitude <= north_east[1]
+        if not all((name, address, reward_title, reward_text)) or not in_polyana or not 30 <= radius <= 500:
+            raise QuestError("invalid_point", "Проверь поля: координаты должны быть внутри зоны Красной Поляны, радиус — от 30 до 500 м.")
         async with self.db.transaction() as db:
             before = await (await db.execute("SELECT * FROM points WHERE id=?", (point_id,))).fetchone()
             if not before:
@@ -450,13 +492,83 @@ class QuestService:
 
     async def rotate_qr(self, admin_id: int, point_id: int) -> str:
         raw = "bbq-v1-" + secrets.token_urlsafe(28)
+        now = iso()
         async with self.db.transaction() as db:
             point = await (await db.execute("SELECT id FROM points WHERE id=?", (point_id,))).fetchone()
             if not point:
                 raise QuestError("point_not_found", "Точка не найдена.", 404)
-            await db.execute("UPDATE points SET qr_code_hash=?,qr_public_hint=?,updated_at=? WHERE id=?", (qr_digest(self.settings.qr_secret, raw), raw[-6:].upper(), iso(), point_id))
+            digest = qr_digest(self.settings.qr_secret, raw)
+            manual = raw[-6:].upper()
+            await db.execute("UPDATE points SET qr_code_hash=?,qr_public_hint=?,updated_at=? WHERE id=?", (digest, manual, now, point_id))
+            await db.execute("UPDATE point_qr_codes SET active=0,updated_at=? WHERE point_id=?", (now, point_id))
+            await db.execute(
+                "INSERT INTO point_qr_codes(point_id,label,code_hash,manual_code,active,created_at,updated_at) VALUES(?,? ,?,?,1,?,?)",
+                (point_id, "Основной QR", digest, manual, now, now),
+            )
             await db.execute("INSERT INTO admin_audit(admin_id,action,entity_type,entity_id,after_json,created_at) VALUES(?,?,?,?,?,?)", (admin_id, "point.qr.rotate", "point", str(point_id), '{"rotated":true}', iso()))
         return raw
+
+    async def create_qr(self, admin_id: int, point_id: int, label: str) -> tuple[str, int]:
+        label = label.strip()[:80] or "Дополнительный QR"
+        raw = "bbq-v2-" + secrets.token_urlsafe(28)
+        now = iso()
+        async with self.db.transaction() as db:
+            point = await (await db.execute("SELECT id FROM points WHERE id=?", (point_id,))).fetchone()
+            if not point:
+                raise QuestError("point_not_found", "Точка не найдена.", 404)
+            cursor = await db.execute(
+                """INSERT INTO point_qr_codes(point_id,label,code_hash,manual_code,active,created_at,updated_at)
+                   VALUES(?,?,?,?,1,?,?)""",
+                (point_id, label, qr_digest(self.settings.qr_secret, raw), raw[-6:].upper(), now, now),
+            )
+            await db.execute(
+                "INSERT INTO admin_audit(admin_id,action,entity_type,entity_id,after_json,created_at) VALUES(?,?,?,?,?,?)",
+                (admin_id, "point.qr.create", "point_qr", str(cursor.lastrowid), json.dumps({"point_id": point_id, "label": label}, ensure_ascii=False), now),
+            )
+        return raw, int(cursor.lastrowid)
+
+    async def set_qr_active(self, admin_id: int, qr_id: int, active: bool) -> dict:
+        async with self.db.transaction() as db:
+            qr = await (await db.execute("SELECT * FROM point_qr_codes WHERE id=?", (qr_id,))).fetchone()
+            if not qr:
+                raise QuestError("qr_not_found", "QR не найден.", 404)
+            if not active:
+                other = await (await db.execute(
+                    "SELECT COUNT(*) count FROM point_qr_codes WHERE point_id=? AND active=1 AND id<>?",
+                    (qr["point_id"], qr_id),
+                )).fetchone()
+                if not other["count"]:
+                    raise QuestError("last_qr", "У точки должен остаться хотя бы один активный QR.", 409)
+            await db.execute("UPDATE point_qr_codes SET active=?,updated_at=? WHERE id=?", (int(active), iso(), qr_id))
+            await db.execute(
+                "INSERT INTO admin_audit(admin_id,action,entity_type,entity_id,after_json,created_at) VALUES(?,?,?,?,?,?)",
+                (admin_id, "point.qr.status", "point_qr", str(qr_id), json.dumps({"active": bool(active)}), iso()),
+            )
+        return await self.admin_overview()
+
+    async def record_event(self, identity: TelegramIdentity, event_type: str, request_id: str, point_id: int | None = None, navigator: str = "") -> None:
+        if event_type not in {"catalog_open", "point_view", "navigator_open", "qr_open"}:
+            raise QuestError("invalid_event", "Неизвестное событие.")
+        if len(request_id) > 80 or navigator not in {"", "yandex", "2gis"}:
+            raise QuestError("invalid_event", "Некорректное событие.")
+        session = await self.db.fetchone(
+            "SELECT id FROM sessions WHERE user_id=? AND status='active' ORDER BY started_at DESC LIMIT 1",
+            (identity.user_id,),
+        )
+        if not session:
+            return
+        async with self.db.transaction() as db:
+            if point_id is not None:
+                owned = await (await db.execute(
+                    "SELECT 1 FROM session_points WHERE session_id=? AND point_id=?",
+                    (session["id"], point_id),
+                )).fetchone()
+                if not owned:
+                    raise QuestError("point_not_found", "Точка не найдена.", 404)
+            await db.execute(
+                "INSERT OR IGNORE INTO quest_events(session_id,user_id,event_type,point_id,navigator,request_id,created_at) VALUES(?,?,?,?,?,?,?)",
+                (session["id"], identity.user_id, event_type, point_id, navigator, request_id, iso()),
+            )
 
     async def mark_premium_issued(self, admin_id: int, session_id: str) -> None:
         async with self.db.transaction() as db:
@@ -476,10 +588,21 @@ class QuestService:
     async def janitor(self, stop: asyncio.Event) -> None:
         while not stop.is_set():
             cutoff = iso(utcnow() - timedelta(days=self.settings.location_retention_days))
+            now = iso()
             async with self.db.transaction() as db:
+                await db.execute(
+                    "UPDATE sessions SET status='expired' WHERE status IN ('awaiting_location','active') AND expires_at<?",
+                    (now,),
+                )
                 await db.execute(
                     """DELETE FROM location_observations WHERE received_at<? AND session_id IN
                        (SELECT id FROM sessions WHERE status IN ('completed','expired','cancelled'))""", (cutoff,)
+                )
+                await db.execute(
+                    """UPDATE sessions SET last_location_at=NULL,last_latitude=NULL,last_longitude=NULL,
+                       live_chat_id=NULL,live_message_id=NULL
+                       WHERE status IN ('completed','expired','cancelled') OR last_location_at<?""",
+                    (cutoff,),
                 )
             try:
                 await asyncio.wait_for(stop.wait(), timeout=3600)

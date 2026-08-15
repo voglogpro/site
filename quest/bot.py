@@ -1,19 +1,14 @@
 from __future__ import annotations
 
-import logging
-from datetime import timezone
-
-from aiogram import Bot, F, Router
+from aiogram import Bot, Router
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import (
-    BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton,
-    Message, ReplyKeyboardMarkup, Update, WebAppInfo,
+    BotCommand, InlineKeyboardButton, InlineKeyboardMarkup,
+    Message, WebAppInfo,
 )
 
 from .config import Settings
-from .service import QuestError, QuestService
-
-log = logging.getLogger("bibibike.quest.bot")
+from .service import QuestService
 
 
 def app_keyboard(settings: Settings, is_admin: bool = False) -> InlineKeyboardMarkup:
@@ -23,19 +18,9 @@ def app_keyboard(settings: Settings, is_admin: bool = False) -> InlineKeyboardMa
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def location_help_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="Отправить текущую геопозицию", request_location=True)]],
-        resize_keyboard=True,
-        one_time_keyboard=True,
-        input_field_placeholder="Или открой скрепку → Геопозиция → Транслировать",
-    )
-
-
 async def setup_bot_commands(bot: Bot) -> None:
     await bot.set_my_commands([
         BotCommand(command="start", description="Открыть квест"),
-        BotCommand(command="location", description="Как включить геопозицию"),
         BotCommand(command="progress", description="Мой прогресс"),
         BotCommand(command="help", description="Помощь"),
         BotCommand(command="admin", description="Панель управления"),
@@ -53,21 +38,10 @@ def build_router(service: QuestService, settings: Settings) -> Router:
         text = (
             "<b>Квест bb.bike по Красной Поляне</b>\n\n"
             "Три партнёрские точки, подарок на каждой и месяц премиума после финиша. "
-            "Открой приложение — оно сохранит прогресс, даже если связь прервётся.\n\n"
+            "Выбирай точки в любом порядке, открывай маршрут в Яндекс Картах или 2ГИС и подтверждай визит QR-кодом.\n\n"
             "Во время поездки смотри в телефон только после полной остановки."
         )
         await message.answer(text, reply_markup=app_keyboard(settings, message.from_user.id in settings.admin_ids))
-
-    @router.message(Command("location"))
-    async def location_help(message: Message):
-        await message.answer(
-            "<b>Как включить геопозицию</b>\n\n"
-            "1. Нажми скрепку в этом чате.\n"
-            "2. Выбери «Геопозиция».\n"
-            "3. Нажми «Транслировать геопозицию».\n\n"
-            "Обычная точка ниже тоже поможет при проверке, но для маршрута лучше трансляция.",
-            reply_markup=location_help_keyboard(),
-        )
 
     @router.message(Command("progress"))
     async def progress(message: Message):
@@ -78,7 +52,7 @@ def build_router(service: QuestService, settings: Settings) -> Router:
     @router.message(Command("help"))
     async def help_message(message: Message):
         await message.answer(
-            "Если геопозиция пропала, уже пройденные точки не исчезнут. Включи трансляцию снова и продолжай.\n\n"
+            "Открой приложение, выбери любую непройденную точку и построй маршрут. Для сортировки по расстоянию можно один раз разрешить геопозицию — она не отправляется боту.\n\n"
             f"Поддержка: {settings.support_url}"
         )
 
@@ -107,50 +81,8 @@ def build_router(service: QuestService, settings: Settings) -> Router:
             f"<b>{item['display_name']}</b>\n"
             f"Прогресс: {progress}/3\n"
             f"Статус: {item['status']}\n"
-            f"Последняя геопозиция: {item['last_location_at'] or 'не получена'}\n"
             f"Проверка: {item['integrity_status']}\n"
             f"Premium: {item['premium_status'] or 'не назначен'}"
         )
-
-    async def handle_location(message: Message, event_update: Update, edited: bool):
-        if message.chat.type != "private" or not message.from_user or not message.location:
-            return
-        try:
-            state = await service.record_location(
-                message.from_user.id,
-                message.location.latitude,
-                message.location.longitude,
-                message.location.horizontal_accuracy,
-                source="live",
-                observed_at=message.edit_date or message.date,
-                telegram_update_id=event_update.update_id,
-                request_id=f"tg-{event_update.update_id}",
-                chat_id=message.chat.id,
-                message_id=message.message_id,
-            )
-            if not edited:
-                current = state.get("session") or {}
-                await message.answer(
-                    "<b>Геопозиция подключена</b>\n\nМаршрут обновляется. Можно вернуться в приложение.",
-                    reply_markup=app_keyboard(settings),
-                )
-                log.info("Геопозиция подключена: user=%s session=%s", message.from_user.id, current.get("id"))
-            elif state.get("event", {}).get("point_completed"):
-                number = state["event"]["point_completed"]
-                await message.answer(
-                    f"<b>Точка {number} подтверждена</b>\n\nГеопозиция и QR совпали. Подарок уже сохранён в приложении.",
-                    reply_markup=app_keyboard(settings),
-                )
-        except QuestError as exc:
-            if not edited:
-                await message.answer(exc.message, reply_markup=app_keyboard(settings))
-
-    @router.message(F.location)
-    async def initial_location(message: Message, event_update: Update):
-        await handle_location(message, event_update, False)
-
-    @router.edited_message(F.location)
-    async def edited_location(message: Message, event_update: Update):
-        await handle_location(message, event_update, True)
 
     return router
