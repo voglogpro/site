@@ -15,7 +15,7 @@ from quest.config import load_settings
 from quest.db import Database
 from quest.service import QuestService
 
-BUILD_VERSION = "2026-08-15 · Krasnaya Polyana Quest 2.0 · свободный маршрут"
+BUILD_VERSION = "2026-08-15 · Krasnaya Polyana Quest 2.1 · паспорт долины"
 
 
 async def run() -> None:
