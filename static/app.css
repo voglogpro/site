@@ -61,6 +61,8 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .consent{display:grid;grid-template-columns:20px 1fr;gap:10px;margin:12px 1px 16px;color:#b9c8bc;font-size:12px;line-height:1.4}
 .consent input{width:19px;height:19px;margin:0;accent-color:var(--green)}
 .cover-button{background:#fff!important;border-color:#fff!important;color:#041008!important}
+.public-cover .cover-copy{margin-bottom:11dvh}
+.public-link{text-decoration:none;margin-top:9px}
 .text-button{width:100%;min-height:44px;border:0;background:none;color:var(--stamp);font-size:14px;font-weight:700}
 
 /* Штампы и маршрут */

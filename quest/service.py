@@ -121,6 +121,7 @@ class QuestService:
                     "SELECT * FROM sessions WHERE campaign_id=? AND user_id=?", (campaign["id"], identity.user_id)
                 )).fetchone()
                 if existing:
+                    await self._resume_expired_in_tx(db, identity.user_id, campaign)
                     return await self._state_in_tx(db, identity.user_id)
                 points = await (await db.execute(
                     "SELECT * FROM points WHERE campaign_id=? AND active=1 ORDER BY seq", (campaign["id"],)
@@ -147,6 +148,7 @@ class QuestService:
         await self.upsert_participant(identity)
         async with self.db.transaction() as db:
             await self._expire_in_tx(db, identity.user_id)
+            await self._resume_expired_in_tx(db, identity.user_id)
             return await self._state_in_tx(db, identity.user_id)
 
     async def _expire_in_tx(self, db, user_id: int) -> None:
@@ -156,6 +158,28 @@ class QuestService:
                WHERE user_id=? AND status IN ('awaiting_location','active') AND expires_at < ?""",
             (user_id, now),
         )
+
+    async def _resume_expired_in_tx(self, db, user_id: int, campaign=None) -> bool:
+        """Turn an expired incomplete trip into a resumable pause.
+
+        A session is unique per campaign, so leaving it expired permanently
+        would lock the participant out forever.  We keep the same session,
+        stamps and rewards and only renew its activity window.
+        """
+        campaign = campaign or await self._campaign(db)
+        if not campaign or campaign["status"] != "active":
+            return False
+        expires = utcnow() + timedelta(minutes=max(30, int(campaign["session_duration_min"])))
+        cursor = await db.execute(
+            """UPDATE sessions SET status='active',expires_at=?
+               WHERE campaign_id=? AND user_id=? AND status='expired'
+                 AND EXISTS (
+                    SELECT 1 FROM session_points sp
+                    WHERE sp.session_id=sessions.id AND sp.completed_at IS NULL
+                 )""",
+            (iso(expires), campaign["id"], user_id),
+        )
+        return cursor.rowcount > 0
 
     async def _state_in_tx(self, db, user_id: int) -> dict:
         campaign = await self._campaign(db)
@@ -232,6 +256,7 @@ class QuestService:
         async with self.lock_for(user_id):
             async with self.db.transaction() as db:
                 await self._expire_in_tx(db, user_id)
+                await self._resume_expired_in_tx(db, user_id)
                 session = await (await db.execute(
                     "SELECT * FROM sessions WHERE user_id=? ORDER BY started_at DESC LIMIT 1", (user_id,)
                 )).fetchone()
@@ -299,6 +324,7 @@ class QuestService:
         async with self.lock_for(identity.user_id):
             async with self.db.transaction() as db:
                 await self._expire_in_tx(db, identity.user_id)
+                await self._resume_expired_in_tx(db, identity.user_id)
                 session = await (await db.execute(
                     "SELECT * FROM sessions WHERE user_id=? ORDER BY started_at DESC LIMIT 1", (identity.user_id,)
                 )).fetchone()
@@ -487,6 +513,16 @@ class QuestService:
                 """UPDATE points SET name=?,address=?,latitude=?,longitude=?,radius_m=?,reward_title=?,reward_text=?,partner_hours=?,updated_at=? WHERE id=?""",
                 (name, address, latitude, longitude, radius, reward_title, reward_text, hours, iso(), point_id),
             )
+            # Keep already opened routes useful: unfinished places receive the
+            # corrected address/reward/coordinates, while completed rewards
+            # remain an immutable historical snapshot.
+            await db.execute(
+                """UPDATE session_points
+                   SET point_name=?,address=?,latitude=?,longitude=?,radius_m=?,
+                       reward_title=?,reward_text=?,partner_hours=?
+                   WHERE point_id=? AND completed_at IS NULL""",
+                (name, address, latitude, longitude, radius, reward_title, reward_text, hours, point_id),
+            )
             await db.execute("INSERT INTO admin_audit(admin_id,action,entity_type,entity_id,before_json,after_json,created_at) VALUES(?,?,?,?,?,?,?)", (admin_id, "point.update", "point", str(point_id), json.dumps(row_dict(before), ensure_ascii=False), json.dumps(payload, ensure_ascii=False), iso()))
         return await self.admin_overview()
 
@@ -551,13 +587,15 @@ class QuestService:
             raise QuestError("invalid_event", "Неизвестное событие.")
         if len(request_id) > 80 or navigator not in {"", "yandex", "2gis"}:
             raise QuestError("invalid_event", "Некорректное событие.")
-        session = await self.db.fetchone(
-            "SELECT id FROM sessions WHERE user_id=? AND status='active' ORDER BY started_at DESC LIMIT 1",
-            (identity.user_id,),
-        )
-        if not session:
-            return
         async with self.db.transaction() as db:
+            await self._expire_in_tx(db, identity.user_id)
+            await self._resume_expired_in_tx(db, identity.user_id)
+            session = await (await db.execute(
+                "SELECT id FROM sessions WHERE user_id=? AND status='active' ORDER BY started_at DESC LIMIT 1",
+                (identity.user_id,),
+            )).fetchone()
+            if not session:
+                return
             if point_id is not None:
                 owned = await (await db.execute(
                     "SELECT 1 FROM session_points WHERE session_id=? AND point_id=?",

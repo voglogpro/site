@@ -15,7 +15,7 @@ from aiohttp import web
 from aiogram import Bot
 
 from .config import Settings
-from .security import request_identity, require_admin
+from .security import request_identity, require_admin, validate_admin_ticket
 from .service import QuestError, QuestService
 
 log = logging.getLogger("bibibike.quest.api")
@@ -99,8 +99,24 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
     async def index(_):
         return web.FileResponse(root / "index.html", headers={"Cache-Control": "no-cache"})
 
-    async def admin_page(_):
-        return web.FileResponse(static / "admin.html", headers={"Cache-Control": "no-cache"})
+    async def admin_page(request):
+        ticket = request.query.get("ticket", "")
+        if validate_admin_ticket(ticket, settings) is None:
+            raise web.HTTPFound(location="/")
+        # admin.html deliberately lives outside the public static directory.
+        # This signed handler is the only route capable of serving the CRM.
+        return web.FileResponse(root / "admin.html", headers={"Cache-Control": "no-cache"})
+
+    async def public_info(_):
+        nonlocal bot_username_cache
+        if not bot_username_cache:
+            bot_username_cache = (await bot.get_me()).username or ""
+        username = bot_username_cache
+        return json_response({
+            "bot_username": username,
+            "chat_url": f"https://t.me/{username}?start=quest" if username else "",
+            "app_url": f"https://t.me/{username}?startapp=quest&mode=fullscreen" if username else "",
+        })
 
     async def privacy(_):
         return web.FileResponse(static / "privacy.html", headers={"Cache-Control": "public, max-age=300"})
@@ -124,7 +140,12 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         data = await service.state(identity)
         if not bot_username_cache:
             bot_username_cache = (await bot.get_me()).username or ""
-        return json_response({"data": data, "is_admin": identity.user_id in settings.admin_ids, "bot_username": bot_username_cache})
+        return json_response({
+            "data": data,
+            "is_admin": identity.user_id in settings.admin_ids,
+            "bot_username": bot_username_cache,
+            "build_version": build_version,
+        })
 
     async def start(request):
         identity = request_identity(request, settings)
@@ -233,6 +254,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
     app.router.add_get("/health", health)
     app.router.add_get("/ready", ready)
     app.router.add_get("/favicon.ico", favicon)
+    app.router.add_get("/api/public/info", public_info)
     app.router.add_get("/api/quest/state", state)
     app.router.add_post("/api/quest/start", start)
     app.router.add_post("/api/quest/event", event)

@@ -206,6 +206,9 @@ class Database:
             "INSERT INTO schema_meta(key,value) VALUES('version','2') ON CONFLICT(key) DO UPDATE SET value=excluded.value"
         )
         await self._db.commit()
+        check = await (await self._db.execute("PRAGMA quick_check")).fetchone()
+        if not check or check[0] != "ok":
+            raise RuntimeError(f"SQLite integrity check failed: {check[0] if check else 'no result'}")
 
     @property
     def connection(self) -> aiosqlite.Connection:

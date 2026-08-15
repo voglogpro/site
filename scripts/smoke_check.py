@@ -10,7 +10,7 @@ os.environ.setdefault("ADMIN_IDS", "7785586524")
 os.environ.setdefault("QR_SECRET", "development-only-qr-secret-32-chars")
 from quest.config import load_settings
 from quest.db import Database
-from quest.security import TelegramIdentity
+from quest.security import TelegramIdentity, create_admin_ticket, validate_admin_ticket
 from quest.service import QuestError, QuestService
 
 async def scenario(order: tuple[int, ...]) -> None:
@@ -39,6 +39,32 @@ async def scenario(order: tuple[int, ...]) -> None:
                 await service.set_qr_active(settings.dev_user_id, extra_id, False)
             await service.admin_update_campaign(settings.dev_user_id,{"status":"active","session_duration_min":240})
             state = await service.start(identity, True); assert state["session"]["status"] == "active"
+            if order == (0, 1, 2):
+                session_id = state["session"]["id"]
+                async with db.transaction() as tx:
+                    await tx.execute(
+                        "UPDATE sessions SET status='active',expires_at='2000-01-01T00:00:00+00:00' WHERE id=?",
+                        (session_id,),
+                    )
+                resumed = await service.state(identity)
+                assert resumed["session"]["id"] == session_id
+                assert resumed["session"]["status"] == "active"
+                second = overview["points"][1]
+                await service.admin_update_point(settings.dev_user_id, second["id"], {
+                    "name":"Сохранённая точка","address":"Сохранённый адрес",
+                    "latitude":second["latitude"],"longitude":second["longitude"],"radius_m":100,
+                    "reward_title":"Сохранённый подарок","reward_text":"После перезапуска","partner_hours":"10:00–20:00"
+                })
+                snapshot = await service.state(identity)
+                assert snapshot["points"][1]["point_name"] == "Сохранённая точка"
+                await service.record_event(identity, "point_view", "persistent-event", second["id"])
+                await db.close()
+                db = Database(path); await db.initialize()
+                service = QuestService(db, settings)
+                persisted = await service.state(identity)
+                assert persisted["session"]["id"] == session_id
+                assert persisted["points"][1]["point_name"] == "Сохранённая точка"
+                assert (await db.fetchone("SELECT COUNT(*) count FROM quest_events WHERE request_id='persistent-event'"))["count"] == 1
             for n,idx in enumerate(order):
                 state = await service.scan(identity,codes[idx],f"scan-{n}")
                 assert len([p for p in state["points"] if p["completed_at"]]) == n+1
@@ -54,6 +80,12 @@ async def scenario(order: tuple[int, ...]) -> None:
         finally: await db.close()
 
 async def main() -> None:
+    settings = load_settings()
+    admin_id = next(iter(settings.admin_ids))
+    ticket = create_admin_ticket(admin_id, settings, now=1_000)
+    assert validate_admin_ticket(ticket, settings, now=1_001) == admin_id
+    assert validate_admin_ticket(ticket + "x", settings, now=1_001) is None
+    assert validate_admin_ticket(ticket, settings, now=1_000 + settings.admin_ticket_ttl_sec + 1) is None
     for order in itertools.permutations(range(3)): await scenario(order)
-    print("PASS: v2 database, all 6 point orders, QR idempotency and one premium")
+    print("PASS: persistence restart, resume, admin ticket, 6 point orders, QR idempotency and one premium")
 if __name__ == "__main__": asyncio.run(main())

@@ -36,6 +36,7 @@ class Settings:
     db_name: str
     timezone: str
     init_data_max_age_sec: int
+    admin_ticket_ttl_sec: int
     session_duration_min: int
     location_stale_sec: int
     location_retention_days: int
@@ -89,7 +90,11 @@ def load_settings() -> Settings:
         data_dir=data_dir,
         db_name=os.getenv("DB_NAME", "bibibike_quest.db"),
         timezone=os.getenv("TIMEZONE", "Europe/Moscow"),
-        init_data_max_age_sec=int(os.getenv("INIT_DATA_MAX_AGE_SEC", "900")),
+        # Telegram keeps the same initData while an already opened Mini App is
+        # running.  Twelve hours keeps a day trip alive without accepting old
+        # authentication indefinitely.
+        init_data_max_age_sec=int(os.getenv("INIT_DATA_MAX_AGE_SEC", "43200")),
+        admin_ticket_ttl_sec=int(os.getenv("ADMIN_TICKET_TTL_SEC", "43200")),
         session_duration_min=int(os.getenv("SESSION_DURATION_MIN", "240")),
         location_stale_sec=int(os.getenv("LOCATION_STALE_SEC", "300")),
         location_retention_days=int(os.getenv("LOCATION_RETENTION_DAYS", "7")),

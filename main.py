@@ -15,7 +15,7 @@ from quest.config import load_settings
 from quest.db import Database
 from quest.service import QuestService
 
-BUILD_VERSION = "2026-08-15 · Krasnaya Polyana Quest 2.1 · паспорт долины"
+BUILD_VERSION = "2026-08-15 · Krasnaya Polyana Quest 2.2 · stable CRM and persistence"
 
 
 async def run() -> None:
@@ -33,7 +33,7 @@ async def run() -> None:
     bot = Bot(settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
     dp.include_router(build_router(service, settings))
-    await setup_bot_commands(bot)
+    await setup_bot_commands(bot, settings)
 
     app = create_web_app(service, settings, bot, BUILD_VERSION)
     runner = web.AppRunner(app, access_log=logging.getLogger("aiohttp.access"))
@@ -42,6 +42,18 @@ async def run() -> None:
     await site.start()
     log.info("Mini App и API слушают 0.0.0.0:%s", settings.web_port)
     log.info("Версия: %s", BUILD_VERSION)
+    counts = {
+        "campaigns": (await db.fetchone("SELECT COUNT(*) count FROM campaigns"))["count"],
+        "points": (await db.fetchone("SELECT COUNT(*) count FROM points"))["count"],
+        "participants": (await db.fetchone("SELECT COUNT(*) count FROM participants"))["count"],
+        "sessions": (await db.fetchone("SELECT COUNT(*) count FROM sessions"))["count"],
+        "events": (await db.fetchone("SELECT COUNT(*) count FROM quest_events"))["count"],
+    }
+    log.info(
+        "Постоянная БД: %s · campaigns=%s points=%s participants=%s sessions=%s events=%s",
+        settings.db_path, counts["campaigns"], counts["points"], counts["participants"],
+        counts["sessions"], counts["events"],
+    )
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()

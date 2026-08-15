@@ -75,7 +75,45 @@ def require_admin(request: web.Request, settings: Settings) -> TelegramIdentity:
     identity = request_identity(request, settings)
     if identity.user_id not in settings.admin_ids:
         raise web.HTTPForbidden(text=json.dumps({"ok": False, "error": "admin_required"}), content_type="application/json")
+    ticket = request.headers.get("X-Admin-Ticket", "")
+    if validate_admin_ticket(ticket, settings) != identity.user_id:
+        raise web.HTTPForbidden(
+            text=json.dumps({"ok": False, "error": "admin_command_required"}),
+            content_type="application/json",
+        )
     return identity
+
+
+def create_admin_ticket(user_id: int, settings: Settings, now: int | None = None) -> str:
+    """Create a short-lived command launch ticket bound to one Telegram admin."""
+    issued_at = int(time.time() if now is None else now)
+    expires_at = issued_at + settings.admin_ticket_ttl_sec
+    payload = f"{int(user_id)}.{expires_at}"
+    signature = hmac.new(
+        settings.qr_secret.encode(), f"admin-launch:{payload}".encode(), hashlib.sha256
+    ).hexdigest()
+    return f"{payload}.{signature}"
+
+
+def validate_admin_ticket(ticket: str, settings: Settings, now: int | None = None) -> int | None:
+    if settings.dev_mode and ticket == "dev":
+        return settings.dev_user_id
+    try:
+        raw_user_id, raw_expires, received = ticket.split(".", 2)
+        user_id, expires_at = int(raw_user_id), int(raw_expires)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    current = int(time.time() if now is None else now)
+    if user_id not in settings.admin_ids or expires_at < current:
+        return None
+    # Reject implausibly long tickets even if a future configuration is wrong.
+    if expires_at > current + settings.admin_ticket_ttl_sec + 60:
+        return None
+    payload = f"{user_id}.{expires_at}"
+    expected = hmac.new(
+        settings.qr_secret.encode(), f"admin-launch:{payload}".encode(), hashlib.sha256
+    ).hexdigest()
+    return user_id if hmac.compare_digest(expected, received) else None
 
 
 def qr_digest(secret: str, raw_code: str) -> str:
