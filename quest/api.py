@@ -88,7 +88,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(self), camera=(self)"
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self' https://telegram.org; script-src 'self' 'unsafe-inline' https://telegram.org https://unpkg.com; "
+            "default-src 'self' https://telegram.org; script-src 'self' 'unsafe-inline' https://telegram.org; "
             "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; "
             "connect-src 'self'; frame-ancestors 'self' https://web.telegram.org"
         )
@@ -131,6 +131,18 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
 
     async def favicon(_):
         return web.FileResponse(static / "bb-bike-logo.jpg", headers={"Cache-Control": "public, max-age=86400"})
+
+    async def leaflet_asset(_):
+        # The browser bundle deliberately uses a non-.js file in the repository:
+        # BotHost has previously tried to execute vendor .js files during deploy.
+        # This explicit same-origin route serves it with the correct browser MIME type.
+        return web.FileResponse(
+            static / "vendor" / "leaflet-1.9.4.asset",
+            headers={
+                "Content-Type": "application/javascript; charset=utf-8",
+                "Cache-Control": "public, max-age=31536000, immutable",
+            },
+        )
 
     async def state(request):
         nonlocal bot_username_cache
@@ -254,6 +266,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
     app.router.add_get("/health", health)
     app.router.add_get("/ready", ready)
     app.router.add_get("/favicon.ico", favicon)
+    app.router.add_get("/assets/leaflet-1.9.4.js", leaflet_asset)
     app.router.add_get("/api/public/info", public_info)
     app.router.add_get("/api/quest/state", state)
     app.router.add_post("/api/quest/start", start)

@@ -45,6 +45,8 @@ textarea{min-height:90px;resize:vertical}
 .sheet-head{display:flex;justify-content:space-between;align-items:start;gap:12px;margin-bottom:14px}
 .toast{position:fixed;z-index:1200;left:50%;bottom:max(22px,env(safe-area-inset-bottom));width:calc(100% - 32px);max-width:468px;transform:translateX(-50%);padding:15px;border:1px solid #4d6b55;border-radius:14px;background:#17311f;box-shadow:0 14px 45px #0009}
 .hidden{display:none!important}
+.map-fallback{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:9px;padding:24px;text-align:center;color:var(--muted);background:radial-gradient(circle at 50% 40%,#153b23 0,#0a1a10 58%)}
+.map-fallback b{color:var(--text);font-size:18px}.map-fallback .btn{width:auto;margin-top:5px}.map-tile-warning{position:absolute;z-index:799;left:50%;bottom:14px;transform:translateX(-50%);max-width:calc(100% - 28px);padding:8px 11px;border:1px solid #f7c25255;border-radius:10px;background:#201b0ee8;color:#f7d78a;font-size:12px;font-weight:750;white-space:nowrap}.bb-admin-marker-wrap{background:transparent;border:0}.bb-admin-marker{display:grid;width:42px;height:42px;place-items:center;border:3px solid #07130b;border-radius:50%;background:#2fdf55;color:#06110a;font:950 16px/1 var(--display);box-shadow:0 0 0 3px #2fdf5570,0 8px 20px #0008}.leaflet-container{background:#0a1a10}.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:#0c1c11;color:#f5f8f5}.leaflet-popup-content{font-family:var(--font)}
 @media(max-width:850px){
   h1{font-size:31px}
   .sheet{width:100%;border-radius:22px 22px 16px 16px}

@@ -1,13 +1,13 @@
 :root{
   color-scheme:dark;
-  --canvas:#06130b;
-  --surface:#0b1b11;
-  --raised:#102418;
-  --ink:#f4f7f3;
-  --muted:#a9b7ac;
-  --line:rgba(195,235,205,.14);
-  --green:#20cf49;
-  --stamp:#6eea62;
+  --canvas:#050b07;
+  --surface:#0a1710;
+  --raised:#102117;
+  --ink:#f5f8f5;
+  --muted:#a7b5aa;
+  --line:rgba(195,235,205,.15);
+  --green:#35e344;
+  --stamp:#82ed4c;
   --cyan:#49bceb;
   --black:#031008;
   --font:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
@@ -29,7 +29,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .brand{min-height:44px;border:0;background:none;padding:0;display:flex;align-items:center;gap:10px;color:var(--ink);font-size:16px;font-weight:650}
 .brand img{width:31px;height:31px;border-radius:50%;object-fit:cover}
 .brand b{font-weight:850}
-.passport-link,.count-label{min-height:36px;border:0;background:none;padding:0;color:#c9ffbd;font-size:13px;font-weight:720}
+.passport-link,.count-label{min-height:44px;border:0;background:none;padding:0;color:#c9ffbd;font-size:13px;font-weight:720}
 .passport-link b{margin-left:5px;color:var(--ink)}
 .count-label{display:flex;align-items:center;font-family:var(--mono);letter-spacing:.04em}
 .icon-button{width:44px;height:44px;border:1px solid var(--line);border-radius:12px;background:var(--surface);display:grid;place-items:center}
@@ -103,8 +103,8 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .reward-strip strong{display:block;font-size:16px}
 .reward-strip p{margin:6px 0 0;color:#b9c9bc;font-size:13px;line-height:1.4}
 .reward-strip small{display:block;margin-top:6px;color:var(--muted)}
-.free-order{margin:10px 0 132px;color:#8da191;font:600 10px/1.4 var(--mono);text-align:center}
-.sticky-actions{position:fixed;z-index:8;left:50%;bottom:max(6px,env(safe-area-inset-bottom));width:min(calc(100% - 28px),430px);transform:translateX(-50%);display:grid;gap:8px;padding:10px 0 2px;background:linear-gradient(to bottom,transparent,var(--canvas) 13px)}
+.free-order{margin:10px 0 8px;color:#8da191;font:600 10px/1.4 var(--mono);text-align:center}
+.sticky-actions{position:relative;z-index:8;width:100%;display:grid;gap:8px;margin:0 0 max(8px,env(safe-area-inset-bottom));padding:8px 0 2px;background:var(--canvas)}
 
 /* Паспорт */
 .passport-page{padding:16px 0 10px}
@@ -177,7 +177,48 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .empty h1{margin:0 0 12px;font-size:30px}.empty p{max-width:320px;margin:0 0 22px;color:var(--muted);line-height:1.45}
 .toast{position:fixed;z-index:80;left:50%;bottom:max(18px,env(safe-area-inset-bottom));width:calc(100% - 28px);max-width:402px;transform:translateX(-50%);padding:14px 15px;border:1px solid #5fca5750;border-radius:12px;background:#122719;color:#eff9f0;box-shadow:0 12px 38px #000a;font-size:14px;line-height:1.35}
 .hidden{display:none!important}
+
+/* Паспорт долины */
+.passport-cover{min-height:calc(100dvh - max(18px,env(safe-area-inset-top)) - max(26px,env(safe-area-inset-bottom)));padding:18px 18px 15px;border-color:#70ec674a;background:#07160c}
+.passport-cover:before{width:600px;height:270px;left:-290px;top:190px;box-shadow:0 0 0 42px #83ff7808,0 0 0 92px #83ff7807,0 0 0 144px #83ff7806}
+.passport-cover:after{right:-285px;bottom:118px}
+.cover-brand img{width:42px;height:42px;border-radius:11px}.cover-brand{font-size:10px;color:#c6d2c8}
+.cover-copy{margin:38px 0 18px}.cover-copy h1{max-width:365px;margin-bottom:12px;font-size:clamp(37px,10.7vw,48px);line-height:.96}.cover-copy>p:last-child{font-size:15px}
+.cover-map{position:relative;height:208px;overflow:hidden;margin:0 0 14px;border:1px solid #b0f76b32;border-radius:15px;background:linear-gradient(155deg,#183921 0,#0b2113 52%,#07150c 100%)}
+.cover-map:before,.cover-map:after{content:"";position:absolute;inset:-70px -45px;border:1px solid #a7f58b20;border-radius:45%;transform:rotate(-15deg);box-shadow:0 0 0 26px #a7f58b09,0 0 0 54px #a7f58b07,0 0 0 86px #a7f58b06}
+.cover-map:after{inset:82px -90px -80px 48px;transform:rotate(11deg)}
+.cover-map-road{position:absolute;left:8%;right:8%;top:50%;height:2px;border-top:2px dashed #82ed4cb8;transform:rotate(-6deg)}
+.cover-map-road:after{content:"";position:absolute;left:28%;top:-42px;width:45%;height:52px;border-top:2px dashed #82ed4cb8;border-radius:50%;transform:rotate(16deg)}
+.cover-map button{position:absolute;z-index:2;left:var(--x);top:var(--y);min-width:44px;min-height:44px;transform:translate(-50%,-50%);border:0;background:transparent;padding:0;display:flex;align-items:center;gap:5px}
+.cover-map button b{width:42px;height:42px;display:grid;flex:0 0 auto;place-items:center;border:3px solid #07130b;border-radius:50%;background:var(--green);color:#071108;font-size:16px;box-shadow:0 0 0 3px #35e3444c,0 8px 22px #0007}
+.cover-map button span{max-width:92px;overflow:hidden;padding:6px 8px;border:1px solid #76e56b45;border-radius:8px;background:#07150de8;color:#eff9ef;font-size:9px;font-weight:800;text-overflow:ellipsis;white-space:nowrap}
+.cover-map-caption{position:absolute;z-index:2;left:13px;top:12px;display:grid;gap:4px}.cover-map-caption span{color:var(--stamp);font:700 9px/1 var(--mono);letter-spacing:.08em}.cover-map-caption b{font-size:14px}
+.cover-stamps{gap:7px;margin-bottom:10px}.cover-stamps span{height:55px;gap:4px;border-color:#82ed4c68;color:#82ed4ca8}.cover-stamps b{font:800 16px/1 var(--mono)}.cover-stamps small{font:650 8px/1 var(--mono);text-transform:uppercase}
+.cover-facts{margin-bottom:10px;font-size:9px}.cover-facts span{padding-top:7px}
+.consent{margin:8px 1px 11px;font-size:11px}.cover-button{border-color:var(--green)!important;background:var(--green)!important;color:#071108!important}.text-button{min-height:40px}
+
+/* Настоящая карта из данных CRM */
+.route-stage{position:relative;height:42dvh;min-height:330px;max-height:430px;overflow:hidden;margin:0 -14px;border-bottom:1px solid #78e34b43;background:#102c18}
+.quest-map{position:absolute;inset:0;background:#102c18}.quest-map .leaflet-tile-pane{filter:brightness(.7) saturate(.74) sepia(.18) hue-rotate(70deg) contrast(1.08)}.quest-map .leaflet-control-container{font-family:var(--font)}
+.map-skeleton{position:absolute;inset:0;overflow:hidden;background:linear-gradient(135deg,#163720,#0a1b10)}.map-skeleton:before,.map-skeleton:after{content:"";position:absolute;inset:-70px;border:1px solid #98ef7621;border-radius:44%;transform:rotate(-14deg);box-shadow:0 0 0 30px #98ef7608,0 0 0 64px #98ef7607,0 0 0 102px #98ef7606}.map-skeleton:after{inset:90px -100px -100px 40px;transform:rotate(18deg)}.map-skeleton span{display:none}
+.map-progress{position:absolute;z-index:600;left:13px;top:13px;display:flex;align-items:baseline;gap:5px;padding:8px 10px;border:1px solid #80ec5060;border-radius:10px;background:#07140de8;color:#f4f8f4;box-shadow:0 8px 24px #0006}.map-progress b{font:800 15px/1 var(--mono)}.map-progress span{color:#afc1b2;font-size:10px}
+.locate-mini{z-index:600;right:13px;top:13px;min-height:44px;border-color:#3bb3e67a;border-radius:10px;background:#07140deb;color:#c8eeff;box-shadow:0 8px 24px #0006}.locate-mini span{max-width:126px;white-space:nowrap}
+.map-health{position:absolute;z-index:600;left:12px;bottom:12px;max-width:65%;padding:7px 9px;border:1px solid #96aa9a3e;border-radius:8px;background:#07140de8;color:#b9c8bc;font:650 9px/1.2 var(--mono)}.map-health.located{border-color:#3bb3e66b;color:#c7eeff}.map-health.warning{border-color:#ffbe3c6b;color:#ffdf98}
+.map-legal{position:absolute;z-index:600;right:7px;bottom:2px;min-width:126px;min-height:44px;padding:25px 5px 3px;border-radius:6px;background:linear-gradient(transparent 0 22px,#061009cc 22px);color:#a9b6ab!important;font-size:8px;text-align:right;text-decoration:none}
+.bb-map-marker-wrap,.bb-user-marker-wrap{border:0;background:transparent}.bb-map-marker{position:relative;width:48px;height:48px;display:grid;place-items:center;border:3px solid #07130b;border-radius:50%;background:#17271b;color:#aebcaf;font:850 16px/1 var(--mono);box-shadow:0 0 0 2px #7381776b,0 9px 22px #0009}.bb-map-marker.active{background:var(--green);color:#071108;box-shadow:0 0 0 4px #35e3445c,0 10px 25px #000a}.bb-map-marker.done{background:#102819;color:var(--stamp);box-shadow:0 0 0 3px #82ed4c77,0 9px 22px #0009}.bb-map-marker svg{width:22px;height:22px;stroke-width:2.6}.bb-map-marker small{position:absolute;left:39px;top:7px;max-width:112px;overflow:hidden;padding:6px 8px;border:1px solid #78df4b55;border-radius:8px;background:#07140def;color:#f4f8f4;font:750 9px/1 var(--font);text-overflow:ellipsis;white-space:nowrap}.bb-map-marker:not(.active) small{display:none}
+.bb-user-marker{position:relative;width:28px;height:28px;display:grid;place-items:center;border:3px solid #d7f4ff;border-radius:50%;background:#2aabee;box-shadow:0 0 0 7px #2aabee36}.bb-user-marker i{width:6px;height:6px;border-radius:50%;background:#fff}.bb-user-marker:after{content:"";position:absolute;inset:-9px;border:2px solid #75d8ff70;border-radius:50%;animation:user-pulse 1.8s infinite}
+.user-map-fallback{position:absolute;inset:0;display:grid;place-content:center;gap:7px;padding:24px;text-align:center;background:radial-gradient(circle at 50% 45%,#1c4327,#0a1b10 65%)}.user-map-fallback b{font-size:18px}.user-map-fallback span{max-width:300px;color:var(--muted);font-size:13px;line-height:1.4}
+.point-dossier{grid-template-columns:54px 1fr;padding-top:14px}.point-index{width:50px;height:50px;border:1px solid #73e84b55;background:#0d2816;color:var(--stamp)}.point-dossier h1{font-size:23px}.reward-strip{border-left-color:var(--green);background:#09180f}
+
+/* Сканер и финал */
+.scanner-screen{min-height:calc(100dvh - 70px);display:flex;flex-direction:column;padding:24px 0 10px}.scanner-screen h1{max-width:320px;margin:0 0 10px;font-size:36px;line-height:.98;letter-spacing:-.045em}.scanner-screen>p:not(.micro){margin:0;color:var(--muted);font-size:15px;line-height:1.45}.scanner-frame{position:relative;flex:1;min-height:310px;max-height:430px;margin:24px 0 14px;overflow:hidden;border:1px solid #82ed4c52;border-radius:18px;background:radial-gradient(circle at 50% 48%,#16341e 0,#07120b 68%)}.scanner-frame:before,.scanner-frame:after,.scanner-frame i:before,.scanner-frame i:after{content:"";position:absolute;width:58px;height:58px;border-color:var(--green);border-style:solid}.scanner-frame:before{left:22px;top:22px;border-width:3px 0 0 3px;border-radius:13px 0 0}.scanner-frame:after{right:22px;top:22px;border-width:3px 3px 0 0;border-radius:0 13px 0 0}.scanner-frame i:before{left:22px;bottom:22px;border-width:0 0 3px 3px;border-radius:0 0 0 13px}.scanner-frame i:after{right:22px;bottom:22px;border-width:0 3px 3px 0;border-radius:0 0 13px}.scanner-frame span{position:absolute;left:28px;right:28px;top:50%;height:2px;background:linear-gradient(90deg,transparent,var(--green),transparent);box-shadow:0 0 16px #35e344;animation:scan-line 2.2s ease-in-out infinite}.scanner-frame b{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:#b6c5b9;font-size:38px;opacity:.25}.scanner-safety{margin:0 0 13px;padding:10px 12px;border:1px solid #ffbe3c48;border-radius:10px;background:#241b0c;color:#f0d190;font-size:12px;line-height:1.35;text-align:center}.scanner-screen>.btn{margin-top:8px}
+.passport-page.complete .passport-title{padding-top:112px;background:#0d2014}.final-bb{position:absolute;left:18px;top:17px;width:76px;height:76px;display:grid;place-items:center;border-radius:18px;background:var(--green);color:#061008;font-size:28px;font-weight:900;transform:rotate(-4deg);box-shadow:0 0 0 5px #35e34420}.share-passport{margin-top:8px}.passport-grid{grid-template-columns:1fr 1fr}.passport-place{min-height:158px;display:grid;grid-template-columns:1fr 22px;grid-template-rows:78px 1fr;padding:10px}.passport-place .mini-stamp{grid-column:1/-1;width:100%;height:72px}.passport-place>div:nth-child(2){align-self:start}.passport-place>svg{grid-column:2;grid-row:2}.passport-place:nth-child(3){grid-column:1/-1;min-height:96px;grid-template-columns:92px 1fr 22px;grid-template-rows:1fr}.passport-place:nth-child(3) .mini-stamp{grid-column:1;grid-row:1;width:92px}.passport-place:nth-child(3)>div:nth-child(2){grid-column:2;grid-row:1;align-self:center}.passport-place:nth-child(3)>svg{grid-column:3;grid-row:1}
+
+@keyframes user-pulse{0%,100%{opacity:.25;transform:scale(.8)}50%{opacity:.85;transform:scale(1.15)}}
+@keyframes scan-line{0%,100%{transform:translateY(-90px);opacity:.35}50%{transform:translateY(90px);opacity:1}}
 @keyframes stamp-in{0%{opacity:0;transform:scale(1.42) rotate(-14deg)}65%{opacity:1;transform:scale(.96) rotate(-5deg)}100%{transform:scale(1) rotate(-7deg)}}
 @media(max-height:700px){.cover-copy{margin:5dvh 0 3dvh}.cover-copy h1{font-size:38px}.route-stage{min-height:32dvh}.stamp-success,.saved-reward{padding-top:4dvh}.stamp-seal{width:150px;height:150px;margin-bottom:24px}.stamp-seal:before{width:175px;height:175px}.stamp-seal strong{font-size:22px}}
-@media(max-width:350px){.app{padding-inline:10px}.route-stage{margin-inline:-10px}.stamp-rail{grid-template-columns:repeat(3,minmax(0,1fr)) 53px}.stamp-total span{display:none}.cover-copy h1{font-size:36px}.passport-place{grid-template-columns:82px 1fr 20px}.mini-stamp span{max-width:70px}.reward-code button span{display:none}}
+@media(max-height:620px){.passport-cover{padding:10px 12px 8px}.cover-brand{font-size:9px}.cover-brand img{width:34px;height:34px}.cover-copy{margin:9px 0 8px}.cover-copy .micro{display:none}.cover-copy h1{margin-bottom:6px;font-size:31px}.cover-copy>p:last-child{font-size:12px;line-height:1.3}.cover-map{height:110px;margin-bottom:6px}.cover-map-caption{left:9px;top:8px}.cover-map-caption b{font-size:11px}.cover-map button b{width:34px;height:34px;font-size:13px}.cover-map button span{display:none}.cover-stamps{margin-bottom:5px}.cover-stamps span{height:38px}.cover-stamps small{display:none}.cover-facts{display:none}.consent{grid-template-columns:17px 1fr;gap:6px;margin:5px 0 6px;font-size:9px;line-height:1.25}.consent input{width:16px;height:16px}.cover-button{min-height:48px}.text-button{min-height:32px;font-size:12px}}
+@media(max-width:350px){.app{padding-inline:10px}.route-stage{margin-inline:-10px}.stamp-rail{grid-template-columns:repeat(3,minmax(0,1fr)) 53px}.stamp-total span{display:none}.cover-copy h1{font-size:36px}.cover-map{height:180px}.passport-grid{grid-template-columns:1fr}.passport-place,.passport-place:nth-child(3){grid-column:1;min-height:102px;grid-template-columns:82px 1fr 20px;grid-template-rows:1fr}.passport-place .mini-stamp,.passport-place:nth-child(3) .mini-stamp{grid-column:1;grid-row:1;width:82px}.passport-place>div:nth-child(2),.passport-place:nth-child(3)>div:nth-child(2){grid-column:2;grid-row:1;align-self:center}.passport-place>svg,.passport-place:nth-child(3)>svg{grid-column:3;grid-row:1}.mini-stamp span{max-width:70px}.reward-code button span{display:none}.locate-mini span{max-width:95px}}
+@media(max-width:350px) and (max-height:620px){.cover-copy h1{font-size:31px}.cover-map{height:110px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}

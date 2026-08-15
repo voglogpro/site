@@ -1,6 +1,6 @@
 """Release smoke: v2 migration, any-order QR, analytics and one premium."""
 from __future__ import annotations
-import asyncio, itertools, os, sys, tempfile
+import asyncio, hashlib, itertools, os, sys, tempfile
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.setdefault("DEV_MODE", "1")
@@ -39,6 +39,7 @@ async def scenario(order: tuple[int, ...]) -> None:
                 await service.set_qr_active(settings.dev_user_id, extra_id, False)
             await service.admin_update_campaign(settings.dev_user_id,{"status":"active","session_duration_min":240})
             state = await service.start(identity, True); assert state["session"]["status"] == "active"
+            assert state["map"]["bounds"] == {"south": 43.6, "west": 40.1, "north": 43.77, "east": 40.37}
             if order == (0, 1, 2):
                 session_id = state["session"]["id"]
                 async with db.transaction() as tx:
@@ -80,6 +81,8 @@ async def scenario(order: tuple[int, ...]) -> None:
         finally: await db.close()
 
 async def main() -> None:
+    leaflet = (Path(__file__).resolve().parent.parent / "static" / "vendor" / "leaflet-1.9.4.asset").read_bytes()
+    assert hashlib.sha256(leaflet.rstrip(b"\n")).hexdigest() == "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a"
     settings = load_settings()
     admin_id = next(iter(settings.admin_ids))
     ticket = create_admin_ticket(admin_id, settings, now=1_000)
@@ -87,5 +90,5 @@ async def main() -> None:
     assert validate_admin_ticket(ticket + "x", settings, now=1_001) is None
     assert validate_admin_ticket(ticket, settings, now=1_000 + settings.admin_ticket_ttl_sec + 1) is None
     for order in itertools.permutations(range(3)): await scenario(order)
-    print("PASS: persistence restart, resume, admin ticket, 6 point orders, QR idempotency and one premium")
+    print("PASS: persistence restart, resume, maps, admin ticket, 6 point orders, QR idempotency and one premium")
 if __name__ == "__main__": asyncio.run(main())

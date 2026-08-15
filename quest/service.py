@@ -239,7 +239,16 @@ class QuestService:
             "location_mode": "optional_local_once",
             "premium": row_dict(entitlement),
             "support_url": self.settings.support_url,
-            "map": {"tile_url": self.settings.map_tile_url, "attribution": self.settings.map_attribution},
+            "map": {
+                "tile_url": self.settings.map_tile_url,
+                "attribution": self.settings.map_attribution,
+                "bounds": {
+                    "south": self.POLYANA_BOUNDS[0][0],
+                    "west": self.POLYANA_BOUNDS[0][1],
+                    "north": self.POLYANA_BOUNDS[1][0],
+                    "east": self.POLYANA_BOUNDS[1][1],
+                },
+            },
         }
 
     async def record_location(
