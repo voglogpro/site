@@ -958,7 +958,7 @@ function cacheState(value){try{localStorage.setItem(CACHE_KEY,JSON.stringify({at
 function cachedState(){try{const raw=localStorage.getItem(CACHE_KEY);if(!raw)return null;const parsed=JSON.parse(raw);return parsed?.data||null}catch(_){return null}}
 function eventLog(event_type,point_id=null,navigator=''){api('/api/quest/event',{method:'POST',keepalive:true,body:JSON.stringify({event_type,point_id,navigator,request_id:requestId()})}).catch(()=>{})}
 function toast(text){const n=document.getElementById('toast');n.textContent=text;n.classList.remove('hidden');clearTimeout(n._t);n._t=setTimeout(()=>n.classList.add('hidden'),3200)}
-function destroyQuestMap(){routeRequestToken++;mapResizeObserver?.disconnect?.();mapResizeObserver=null;if(questMap){questMap.remove();questMap=null}rasterBaseLayer=null;if(glRoute){try{glRoute.destroy()}catch(_){}glRoute=null}routeLayer=null;routeSeq=null;if(glMap){try{glMap.destroy()}catch(_){}glMap=null;glStyleId='';glClear()}}
+function destroyQuestMap(){routeRequestToken++;mapResizeObserver?.disconnect?.();mapResizeObserver=null;clearTimeout(mapReadyTimer);mapReadyTimer=null;mapContextCleanup?.();mapContextCleanup=null;if(questMap){questMap.remove();questMap=null}rasterBaseLayer=null;if(glRoute){try{glRoute.destroy()}catch(_){}glRoute=null}routeLayer=null;routeSeq=null;if(glMap){try{glMap.destroy()}catch(_){}glMap=null;glStyleId='';glClear()}}
 function show(html){destroyQuestMap();root.innerHTML=html;if(offlineMode)root.insertAdjacentHTML('afterbegin','<div class="offline-banner" role="status">Нет сети · показан сохранённый прогресс</div>');root.closest('.app')?.classList.toggle('with-tabbar',!!root.querySelector('.tabbar'));window.scrollTo({top:0,behavior:'auto'});requestAnimationFrame(()=>{const target=[...root.querySelectorAll('h1,h2')].find(node=>!node.closest('button'))||root.querySelector('section');if(target){target.setAttribute('tabindex','-1');target.focus({preventScroll:true})}});setTimeout(syncBackButton,0)}
 function completed(){return (state?.points||[]).filter(p=>p.completed_at).length}
 function pointBySeq(seq){return state?.points?.find(p=>p.seq===Number(seq))}
@@ -1075,6 +1075,7 @@ function mountTiles(node,area){
    она включается сама, если ключ не задан или библиотека не загрузилась,
    поэтому неудачное подключение не оставит гостя без карты. */
 let glMap=null,glMarkers=[],glRoute=null,glUser=null,glStyleId='',mapEngine='raster',rasterMarkers=new Map();
+let mapReadyTimer=null,mapContextCleanup=null;
 
 /* Подпись правообладателей карты. На картах 2ГИС по договорённости
    выводится «BB & 2ГИС», на запасной растровой — источник OpenStreetMap. */
@@ -1090,10 +1091,12 @@ function configuredMapglStyle(){return mapglHasStylePair()?mapglStyles()[mapThem
 // нужен только для фирменной пары тем, а не для запуска самого MapGL.
 function isIOSDevice(){return /iPad|iPhone|iPod/i.test(navigator.userAgent)||
   (navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1)}
-/* На Android WebView и части ПК MapGL создаёт canvas и маркеры, но оставляет
-   базовый слой чёрным. Для них используем растровую карту с того же домена;
-   iPhone сохраняет плавную векторную карту 2ГИС. */
-function useMapgl(){return isIOSDevice()&&!!mapglKey()&&!!window.mapgl}
+function isAndroidDevice(){return /Android/i.test(navigator.userAgent)}
+function chromiumMajor(){const match=navigator.userAgent.match(/(?:Chrome|Chromium)\/(\d+)/i);return match?Number(match[1]):null}
+/* MapGL 2ГИС остаётся основным движком на всех поддерживаемых устройствах.
+   Растр включается лишь когда официальный isSupported() или обе попытки
+   инициализации подтвердили, что WebGL на конкретном устройстве не работает. */
+function useMapgl(){return !!mapglKey()&&!!window.mapgl&&!window.__mapglFailed}
 function themeToggleMarkup(){
   // Один прежний MAPGL_STYLE нельзя плавно вернуть к стандартному стилю.
   // Для него оставляем фиксированную тему; ключ без стиля и полноценная
@@ -1129,18 +1132,23 @@ function loadMapgl(done){
   if(window.mapgl||window.__mapglFailed)return done();
   if(window.__mapglLoading){window.__mapglQueue.push(done);return}
   window.__mapglLoading=true;window.__mapglQueue=[done];
-  const finish=()=>{window.__mapglLoading=false;(window.__mapglQueue||[]).forEach(fn=>fn());window.__mapglQueue=[]};
+  let settled=false;
+  const finish=()=>{if(settled)return;settled=true;window.__mapglLoading=false;(window.__mapglQueue||[]).forEach(fn=>fn());window.__mapglQueue=[]};
   const el=document.createElement('script');
   el.src='https://mapgl.2gis.com/api/js/v1';
   el.async=true;
   el.onload=()=>{try{
-    const android=/Android/i.test(navigator.userAgent);
-    if(typeof window.mapgl?.isSupported==='function'&&!window.mapgl.isSupported(android?{webglVersion:1}:undefined))window.__mapglFailed=true
-  }catch(_){window.__mapglFailed=true}finish()};
-  el.onerror=()=>{window.__mapglFailed=true;finish()};
+    const supportOptions={failIfMajorPerformanceCaveat:false};
+    const supported=typeof window.mapgl?.isSupported!=='function'||window.mapgl.isSupported(supportOptions);
+    let reason='';
+    if(!supported&&typeof window.mapgl?.notSupportedReason==='function')reason=String(window.mapgl.notSupportedReason(supportOptions)||'');
+    window.__mapglDiagnostics={supported,reason,android:isAndroidDevice(),chromium:chromiumMajor(),attempts:[],events:[]};
+    if(!supported)window.__mapglFailed=true
+  }catch(err){window.__mapglDiagnostics={supported:false,reason:String(err?.message||err),attempts:[],events:[]};window.__mapglFailed=true}finish()};
+  el.onerror=()=>{window.__mapglDiagnostics={supported:false,reason:'script_load_error',attempts:[],events:[]};window.__mapglFailed=true;finish()};
   document.head.appendChild(el);
   // Если библиотека молчит, не держим человека перед пустым экраном.
-  setTimeout(()=>{if(!window.mapgl){window.__mapglFailed=true;finish()}},9000)}
+  setTimeout(()=>{if(!window.mapgl){window.__mapglDiagnostics={supported:false,reason:'script_timeout',attempts:[],events:[]};window.__mapglFailed=true;finish()}},9000)}
 
 function pinIcon(active,done){
   const fill=done?'#2f6b33':(active?'#8fe300':'#2a4432');
@@ -1159,35 +1167,54 @@ function glClear(){
   glMarkers.forEach(m=>{try{m.destroy()}catch(_){}});glMarkers=[];
   if(glUser){try{glUser.destroy()}catch(_){}glUser=null}}
 
-function initGlMap(node,p){
+function initGlMap(node,p,compatAttempt=0){
   mapEngine='mapgl';
   const themeButton=document.getElementById('map-theme-toggle');if(themeButton)themeButton.hidden=false;
   try{
+    clearTimeout(mapReadyTimer);mapReadyTimer=null;mapContextCleanup?.();mapContextCleanup=null;
     if(glMap){try{glMap.destroy()}catch(_){}glMap=null}
     glClear();glRoute=null;
-    const initialStyle=configuredMapglStyle(),android=/Android/i.test(navigator.userAgent);
+    const initialStyle=configuredMapglStyle(),android=isAndroidDevice();
     const opts={center:[p.longitude,p.latitude],zoom:14,key:mapglKey(),
       defaultBackgroundColor:mapTheme==='dark'?'#101317':'#e9eee8',zoomControl:false,
-      // Android WebView и некоторые Mali/Adreno стабильнее работают в
-      // WebGL1 без тяжёлых 3D-эффектов. На iOS сохраняем объёмную карту.
       pitch:android?0:32,maxZoom:19,minZoom:10,
-      disableAntiAliasing:android,useRtlTextPlugin:'always-off'};
-    if(android){opts.webglVersion=1;opts.styleState={graphicsPreset:'light',terrainEnabled:false}}
+      disableAntiAliasing:true,useRtlTextPlugin:'always-off',enableTrackResize:true,
+      graphicsPreset:android?'light':'normal'};
+    /* Современный Android сначала получает штатный контекст MapGL. WebGL1
+       включается только повторной попыткой: постоянное принуждение к нему и
+       было причиной чёрной подложки на новых WebView/Mali. */
+    if(compatAttempt>0){opts.webglVersion=1;opts.disableRenderingCache=true;opts.graphicsPreset='light'}
     if(initialStyle)opts.style=initialStyle;
-    glMap=new mapgl.Map(node,opts);
+    const instance=new mapgl.Map(node,opts);glMap=instance;
+    const diag=window.__mapglDiagnostics||(window.__mapglDiagnostics={supported:true,attempts:[],events:[]});
+    diag.attempts=diag.attempts||[];diag.events=diag.events||[];
+    diag.attempts.push({mode:compatAttempt?'webgl1-compat':'automatic',at:Date.now()});
     glStyleId=initialStyle;
     applyMapTheme(false);
-    let styleReady=false;
-    const fallback=(force=false)=>{
-      if((styleReady&&!force)||!document.body.contains(node)||mapEngine!=='mapgl')return;
-      window.__mapglFailed=true;mapEngine='raster';
-      try{glMap?.destroy()}catch(_){}glMap=null;glClear();node.innerHTML='';initRasterMap(node,p)};
-    glMap.on?.('styleload',()=>{styleReady=true;node.classList.add('map-ready')});
-    glMap.on?.('styleloaderror',fallback);
-    glMap.on?.('error',()=>{
-      if(!styleReady)return fallback(true);
-      mapNotice(node,'Часть карты временно не загрузилась — повторяем автоматически.')});
-    setTimeout(fallback,8000);
+    let styleReady=false,renderReady=false,finished=false,preRenderErrors=0;
+    const alive=()=>instance===glMap&&document.body.contains(node)&&mapEngine==='mapgl';
+    const record=(type,value='')=>{diag.events.push({type,value:String(value||'').slice(0,180),at:Date.now()});if(diag.events.length>20)diag.events.shift()};
+    const fallback=(reason='render_timeout')=>{
+      if(finished||renderReady||!alive())return;finished=true;record('retry',reason);
+      clearTimeout(mapReadyTimer);mapReadyTimer=null;mapContextCleanup?.();mapContextCleanup=null;
+      try{instance.destroy()}catch(_){}if(glMap===instance)glMap=null;glClear();
+      node.classList.remove('map-ready');node.innerHTML='<div class="map-skeleton"><span></span><span></span><span></span></div>';
+      if(!isIOSDevice()&&compatAttempt===0){mapNotice(node,'Настраиваем 2ГИС для этого устройства…');setTimeout(()=>{if(document.body.contains(node))initGlMap(node,p,1)},80);return}
+      window.__mapglFailed=true;mapEngine='raster';diag.reason=reason;node.innerHTML='';initRasterMap(node,p)};
+    instance.on?.('styleload',()=>{if(!alive())return;styleReady=true;record('styleload');clearTimeout(mapReadyTimer);mapReadyTimer=setTimeout(()=>fallback('tiles_not_rendered'),18000)});
+    instance.on?.('idle',()=>{if(!alive())return;renderReady=true;finished=true;clearTimeout(mapReadyTimer);mapReadyTimer=null;node.classList.add('map-ready');node.querySelector('.map-notice')?.remove();record('idle')});
+    instance.on?.('styleloaderror',event=>fallback(event?.error?.message||'styleloaderror'));
+    instance.on?.('error',event=>{
+      const kind=event?.error?.type||event?.type||'',message=event?.error?.message||event?.message||kind||'map_error';
+      const signature=`${kind} ${message}`.toLowerCase();record('error',message);
+      const fatal=/invalidtilekey|styleloaderror|webglcontextlost|context lost/.test(signature);
+      if(!renderReady&&(fatal||!styleReady||++preRenderErrors>=4))fallback(kind||message);
+      else if(renderReady)mapNotice(node,'Часть карты временно не загрузилась — повторяем автоматически.')});
+    mapReadyTimer=setTimeout(()=>fallback('style_timeout'),12000);
+    requestAnimationFrame(()=>{
+      if(!alive())return;const canvas=node.querySelector('canvas');if(!canvas)return;
+      const lost=event=>{event.preventDefault?.();record('webglcontextlost');fallback('webglcontextlost')};
+      canvas.addEventListener('webglcontextlost',lost,{once:true});mapContextCleanup=()=>canvas.removeEventListener('webglcontextlost',lost)});
     (state?.points||[]).forEach(point=>{
       const marker=new mapgl.Marker(glMap,{
         coordinates:[point.longitude,point.latitude],
@@ -1206,8 +1233,12 @@ function initGlMap(node,p){
       const a=document.createElement('span');a.className='map-attrib';
       a.textContent=mapAttribution();node.appendChild(a)}
   }catch(err){
-    // Любая осечка возвращает нас на проверенную растровую карту.
-    window.__mapglFailed=true;mapEngine='raster';glMap=null;
+    const diag=window.__mapglDiagnostics||(window.__mapglDiagnostics={supported:true,attempts:[],events:[]});
+    diag.events=(diag.events||[]).concat({type:'constructor_error',value:String(err?.message||err).slice(0,180),at:Date.now()});
+    clearTimeout(mapReadyTimer);mapReadyTimer=null;mapContextCleanup?.();mapContextCleanup=null;
+    try{glMap?.destroy()}catch(_){}glMap=null;glClear();
+    if(!isIOSDevice()&&compatAttempt===0){node.innerHTML='<div class="map-skeleton"><span></span><span></span><span></span></div>';setTimeout(()=>initGlMap(node,p,1),80);return}
+    window.__mapglFailed=true;mapEngine='raster';diag.reason=String(err?.message||err);
     initRasterMap(node,p)}}
 
 function glFitAll(p){
@@ -1226,7 +1257,7 @@ function glFitAll(p){
 function initUserMap(p){
   const node=document.getElementById('quest-map');
   if(!node)return;
-  if(isIOSDevice()&&mapglKey()&&!window.mapgl&&!window.__mapglFailed){
+  if(mapglKey()&&!window.mapgl&&!window.__mapglFailed){
     // Библиотека подгружается один раз, дальше карта строится сразу.
     loadMapgl(()=>initUserMap(p));
     return}

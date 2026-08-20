@@ -139,14 +139,17 @@ async def main() -> None:
     leaflet = (Path(__file__).resolve().parent.parent / "static" / "vendor" / "leaflet-1.9.4.asset").read_bytes()
     assert hashlib.sha256(leaflet.rstrip(b"\n")).hexdigest() == "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a"
     webapp = (Path(__file__).resolve().parent.parent / "index.html").read_text(encoding="utf-8")
-    assert "function useMapgl(){return isIOSDevice()&&!!mapglKey()&&!!window.mapgl}" in webapp
+    assert "function useMapgl(){return !!mapglKey()&&!!window.mapgl&&!window.__mapglFailed}" in webapp
     assert "const proxy=`/tiles/${styleKey}/{z}/{x}/{y}.png`" in webapp
     assert "2gis.ru/directions/tab/" in webapp and "2gis.ru/routeSearch/rsType" not in webapp
     assert "reward_redeem_request_id" in production.SCHEMA
     assert "glMap.setStyleById(next)" in webapp and "id=\"map-theme-toggle\"" in webapp
     assert "coverMapPreview" not in webapp and 'class="cover-map"' not in webapp
     assert ".map-tone-dark canvas" not in webapp
-    assert "opts.webglVersion=1" in webapp and "disableAntiAliasing:android" in webapp
+    assert "supportOptions={failIfMajorPerformanceCaveat:false}" in webapp
+    assert "if(compatAttempt>0){opts.webglVersion=1" in webapp
+    assert "graphicsPreset:android?'light':'normal'" in webapp and "instance.on?.('idle'" in webapp
+    assert "invalidtilekey|styleloaderror|webglcontextlost|context lost" in webapp
     assert production.DEFAULT_MAPGL_LIGHT_STYLE == "c080bb6a-8134-4993-93a1-5b4d8c36a59b"
     assert production.DEFAULT_MAPGL_DARK_STYLE == "9643e8da-173b-4359-9fee-8a1fe58e68aa"
     settings = load_settings()
