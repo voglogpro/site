@@ -28,6 +28,9 @@ async def production_reward_scenario() -> None:
             await service.ensure_demo_campaign()
             identity = production.TelegramIdentity(settings.dev_user_id, "smoke", "Тест", "", "ru")
             overview = await service.admin_overview()
+            assert overview["map"]["mapgl_styles"] == {
+                "light": settings.mapgl_style_light, "dark": settings.mapgl_style_dark,
+            }
             codes = []
             for point in overview["points"]:
                 await service.admin_update_point(0, point["id"], {
@@ -128,6 +131,9 @@ async def scenario(order: tuple[int, ...]) -> None:
 async def main() -> None:
     leaflet = (Path(__file__).resolve().parent.parent / "static" / "vendor" / "leaflet-1.9.4.asset").read_bytes()
     assert hashlib.sha256(leaflet.rstrip(b"\n")).hexdigest() == "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a"
+    webapp = (Path(__file__).resolve().parent.parent / "index.html").read_text(encoding="utf-8")
+    assert "function useMapgl(){return !!mapglKey()&&!!window.mapgl}" in webapp
+    assert "glMap.setStyleById(next)" in webapp and "id=\"map-theme-toggle\"" in webapp
     settings = load_settings()
     admin_id = next(iter(settings.admin_ids))
     ticket = create_admin_ticket(admin_id, settings, now=1_000)

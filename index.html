@@ -288,6 +288,18 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
   font:800 13px/1 var(--font);display:grid;place-items:center}
 .map-chip.active{background:var(--green);color:#07110b;border-color:var(--green)}
 .map-chip.done{color:var(--green)}
+.map-theme-toggle{width:34px;height:34px;flex:0 0 34px;border-radius:11px;
+  border:1px solid rgba(143,227,0,.25);background:rgba(7,20,13,.86);
+  backdrop-filter:blur(12px);color:#dff7c4;display:grid;place-items:center;
+  font:800 17px/1 var(--font);transition:transform .18s ease,background .18s ease}
+.map-theme-toggle:active{transform:scale(.92)}
+/* Если у проекта пока нет пары опубликованных стилей 2ГИС, тёмный режим
+   создаётся лёгкой GPU-коррекцией стандартной карты. После добавления двух
+   Style ID этот фильтр автоматически отключается в пользу setStyleById(). */
+.quest-map.map-tone-dark canvas{filter:brightness(.56) saturate(.72) contrast(1.12);
+  transition:filter .28s ease}
+.quest-map.map-style-switching::before{content:'';position:absolute;inset:0;z-index:1;
+  pointer-events:none;background:#0a1110;opacity:.12;transition:opacity .2s ease}
 .map-geo{position:absolute;z-index:520;right:12px;bottom:calc(var(--sheet-peek) + var(--tabbar-h) + 14px);
   height:44px;padding:0 15px;border-radius:14px;border:1px solid rgba(143,227,0,.34);
   background:rgba(7,20,13,.92);backdrop-filter:blur(12px);color:var(--green);
@@ -924,6 +936,8 @@ const tg=window.Telegram?.WebApp,initData=tg?.initData||'',root=document.getElem
 let state=null,botUsername='',localPosition=null,pointOrder=[],selectedSeq=null,modalTrigger=null,questMap=null;
 let qrPopupOpen=false,syncInFlight=false,lastBuildVersion='',pendingAutoRender=false;
 const dev=location.hostname==='127.0.0.1'||location.hostname==='localhost';
+const MAP_THEME_KEY='bbq-map-theme-v1';
+let mapTheme=(()=>{try{return localStorage.getItem(MAP_THEME_KEY)==='light'?'light':'dark'}catch(_){return 'dark'}})();
 function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function requestId(){return crypto.randomUUID?.()||Date.now()+'-'+Math.random()}
 /* Связь в долине рвётся, поэтому у запроса есть свой таймаут: без него
@@ -953,7 +967,7 @@ function cacheState(value){try{localStorage.setItem(CACHE_KEY,JSON.stringify({at
 function cachedState(){try{const raw=localStorage.getItem(CACHE_KEY);if(!raw)return null;const parsed=JSON.parse(raw);return parsed?.data||null}catch(_){return null}}
 function eventLog(event_type,point_id=null,navigator=''){api('/api/quest/event',{method:'POST',keepalive:true,body:JSON.stringify({event_type,point_id,navigator,request_id:requestId()})}).catch(()=>{})}
 function toast(text){const n=document.getElementById('toast');n.textContent=text;n.classList.remove('hidden');clearTimeout(n._t);n._t=setTimeout(()=>n.classList.add('hidden'),3200)}
-function destroyQuestMap(){if(questMap){questMap.remove();questMap=null}if(glRoute){try{glRoute.destroy()}catch(_){}glRoute=null}routeLayer=null;routeSeq=null;if(glMap){try{glMap.destroy()}catch(_){}glMap=null;glClear()}}
+function destroyQuestMap(){if(questMap){questMap.remove();questMap=null}if(glRoute){try{glRoute.destroy()}catch(_){}glRoute=null}routeLayer=null;routeSeq=null;if(glMap){try{glMap.destroy()}catch(_){}glMap=null;glStyleId='';glClear()}}
 function show(html){destroyQuestMap();root.innerHTML=html;window.scrollTo({top:0,behavior:'instant'});setTimeout(syncBackButton,0)}
 function completed(){return (state?.points||[]).filter(p=>p.completed_at).length}
 function pointBySeq(seq){return state?.points?.find(p=>p.seq===Number(seq))}
@@ -1055,7 +1069,7 @@ function mountTiles(node,area){
    отсюда плавный зум и наклон. Запасной — прежняя растровая карта:
    она включается сама, если ключ не задан или библиотека не загрузилась,
    поэтому неудачное подключение не оставит гостя без карты. */
-let glMap=null,glMarkers=[],glRoute=null,glUser=null,mapEngine='raster',rasterMarkers=new Map();
+let glMap=null,glMarkers=[],glRoute=null,glUser=null,glStyleId='',mapEngine='raster',rasterMarkers=new Map();
 
 /* Подпись правообладателей карты. На картах 2ГИС по договорённости
    выводится «BB & 2ГИС», на запасной растровой — источник OpenStreetMap. */
@@ -1064,9 +1078,42 @@ function mapAttribution(){
 
 function mapglKey(){return state?.map?.mapgl_key||''}
 function mapglStyle(){return state?.map?.mapgl_style||''}
-// Без ночного style ID не включаем светлую карту 2ГИС: локальный
-// растровый fallback уже тёмный и лучше соответствует интерфейсу.
-function useMapgl(){return !!mapglKey()&&!!mapglStyle()&&!!window.mapgl}
+function mapglStyles(){return state?.map?.mapgl_styles||{}}
+function mapglHasStylePair(){const styles=mapglStyles();return !!styles.light&&!!styles.dark}
+function configuredMapglStyle(){return mapglHasStylePair()?mapglStyles()[mapTheme]:mapglStyle()}
+// Обычного API-ключа достаточно для стандартной карты 2ГИС. Style ID
+// нужен только для фирменной пары тем, а не для запуска самого MapGL.
+function useMapgl(){return !!mapglKey()&&!!window.mapgl}
+function themeToggleMarkup(){
+  // Один прежний MAPGL_STYLE нельзя плавно вернуть к стандартному стилю.
+  // Для него оставляем фиксированную тему; ключ без стиля и полноценная
+  // пара LIGHT/DARK поддерживают переключатель.
+  if(!mapglKey()||(mapglStyle()&&!mapglHasStylePair()))return '';
+  const title=mapTheme==='dark'?'Светлая карта':'Тёмная карта';
+  return `<button id="map-theme-toggle" class="map-theme-toggle" onclick="toggleMapTheme()" aria-label="${title}" title="${title}">${mapTheme==='dark'?'☀':'☾'}</button>`}
+function refreshThemeButton(){
+  const button=document.getElementById('map-theme-toggle');if(!button)return;
+  const title=mapTheme==='dark'?'Светлая карта':'Тёмная карта';
+  button.textContent=mapTheme==='dark'?'☀':'☾';button.setAttribute('aria-label',title);button.title=title}
+function applyMapTheme(announce=false){
+  const node=document.getElementById('quest-map');refreshThemeButton();if(!node)return;
+  // Без опубликованной пары стилей аккуратно приглушаем стандартную карту
+  // на GPU. Это не перезагружает тайлы и работает уже с одним API-ключом.
+  node.classList.toggle('map-tone-dark',mapTheme==='dark'&&!mapglHasStylePair()&&!mapglStyle());
+  if(mapEngine==='mapgl'&&glMap&&mapglHasStylePair()){
+    const next=mapglStyles()[mapTheme];
+    if(next&&next!==glStyleId){
+      node.classList.add('map-style-switching');
+      try{
+        const changed=glMap.setStyleById(next);glStyleId=next;
+        Promise.resolve(changed).then(()=>node.classList.remove('map-style-switching')).catch(()=>{
+          node.classList.remove('map-style-switching');toast('Не удалось сменить стиль 2ГИС')})
+      }catch(_){node.classList.remove('map-style-switching');toast('Не удалось сменить стиль 2ГИС')}}}
+  if(announce)toast(mapTheme==='dark'?'Тёмная карта включена':'Светлая карта включена')}
+function toggleMapTheme(){
+  mapTheme=mapTheme==='dark'?'light':'dark';
+  try{localStorage.setItem(MAP_THEME_KEY,mapTheme)}catch(_){}
+  applyMapTheme(true);tg?.HapticFeedback?.selectionChanged?.()}
 
 function loadMapgl(done){
   if(window.mapgl||window.__mapglFailed)return done();
@@ -1104,12 +1151,15 @@ function initGlMap(node,p){
   try{
     if(glMap){try{glMap.destroy()}catch(_){}glMap=null}
     glClear();glRoute=null;
+    const initialStyle=configuredMapglStyle();
     const opts={center:[p.longitude,p.latitude],zoom:14,key:mapglKey(),
-      defaultBackgroundColor:'#101317',zoomControl:false,
+      defaultBackgroundColor:mapTheme==='dark'?'#101317':'#e9eee8',zoomControl:false,
       // Небольшой наклон даёт объём и делает карту «живой».
       pitch:32,maxZoom:19,minZoom:10};
-    if(state?.map?.mapgl_style)opts.style=state.map.mapgl_style;
+    if(initialStyle)opts.style=initialStyle;
     glMap=new mapgl.Map(node,opts);
+    glStyleId=initialStyle;
+    applyMapTheme(false);
     let styleReady=false;
     const fallback=()=>{
       if(styleReady||!document.body.contains(node)||mapEngine!=='mapgl')return;
@@ -1156,7 +1206,7 @@ function glFitAll(p){
 function initUserMap(p){
   const node=document.getElementById('quest-map');
   if(!node)return;
-  if(mapglKey()&&mapglStyle()&&!window.mapgl&&!window.__mapglFailed){
+  if(mapglKey()&&!window.mapgl&&!window.__mapglFailed){
     // Библиотека подгружается один раз, дальше карта строится сразу.
     loadMapgl(()=>initUserMap(p));
     return}
@@ -1587,6 +1637,7 @@ function routeScreen(seq=selectedSeq,track=true){
     <div id="quest-map" class="quest-map" aria-label="Карта партнёрских точек"></div>
     <div class="map-top">
       <div class="map-progress-pill"><b>${completed()}/3</b><span>${3-completed()===0?'всё собрано':'штампов собрано'}</span></div>
+      ${themeToggleMarkup()}
       <div class="map-chip-row">${chips}</div>
     </div>
     <div id="route-info" class="route-info"></div>

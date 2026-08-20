@@ -104,6 +104,8 @@ class Settings:
     tile_palette_name: str
     mapgl_key: str
     mapgl_style: str
+    mapgl_style_light: str
+    mapgl_style_dark: str
     mapgl_daily_limit: int
     map_attribution: str
     dev_mode: bool
@@ -234,6 +236,11 @@ def load_settings() -> Settings:
         mapgl_key=os.getenv("MAPGL_KEY", "").strip(),
         # Идентификатор стиля из редактора 2ГИС. Пустой — стиль по умолчанию.
         mapgl_style=os.getenv("MAPGL_STYLE", "").strip(),
+        # Пара опубликованных стилей позволяет менять тему методом
+        # setStyleById(), не уничтожая карту, маркеры и построенный маршрут.
+        # MAPGL_STYLE оставлен как прежнее имя одного фиксированного стиля.
+        mapgl_style_light=os.getenv("MAPGL_STYLE_LIGHT", "").strip(),
+        mapgl_style_dark=os.getenv("MAPGL_STYLE_DARK", "").strip(),
         # Сколько раз в сутки отдавать ключ 2ГИС. Дальше приложение само
         # переходит на бесплатную карту — так наплыв людей не приведёт
         # к неожиданному счёту. 0 — без ограничения.
@@ -1171,6 +1178,10 @@ class QuestService:
                 "tile_urls": list(self.settings.map_tile_urls),
                 "mapgl_key": mapgl_key_for(self.settings),
                 "mapgl_style": self.settings.mapgl_style,
+                "mapgl_styles": {
+                    "light": self.settings.mapgl_style_light,
+                    "dark": self.settings.mapgl_style_dark,
+                },
                 "attribution": self.settings.map_attribution,
                 "bounds": {
                     "south": self.POLYANA_BOUNDS[0][0],
@@ -1453,7 +1464,7 @@ class QuestService:
         return {
             "campaign": campaign, "points": points, "metrics": metrics, "funnel": funnel,
             "recent": recent, "qr_codes": qr_codes,
-            "map": {"tile_url": self.settings.map_tile_url, "tile_urls": list(self.settings.map_tile_urls), "attribution": self.settings.map_attribution, "mapgl_key": mapgl_key_for(self.settings), "mapgl_style": self.settings.mapgl_style},
+            "map": {"tile_url": self.settings.map_tile_url, "tile_urls": list(self.settings.map_tile_urls), "attribution": self.settings.map_attribution, "mapgl_key": mapgl_key_for(self.settings), "mapgl_style": self.settings.mapgl_style, "mapgl_styles": {"light": self.settings.mapgl_style_light, "dark": self.settings.mapgl_style_dark}},
             "map_bounds": {"south": self.POLYANA_BOUNDS[0][0], "west": self.POLYANA_BOUNDS[0][1], "north": self.POLYANA_BOUNDS[1][0], "east": self.POLYANA_BOUNDS[1][1]},
         }
 
