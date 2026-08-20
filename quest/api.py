@@ -257,7 +257,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         for row in rows:
             writer.writerow([_csv_safe(row[key]) for key in row.keys()])
         body = "\ufeff" + output.getvalue()
-        return web.Response(body=body.encode("utf-8"), content_type="text/csv", headers={"Content-Disposition": 'attachment; filename="bibibike-premium.csv"', "Cache-Control": "no-store"})
+        return web.Response(body=body.encode("utf-8"), content_type="text/csv", headers={"Content-Disposition": 'attachment; filename="bbbike-premium.csv"', "Cache-Control": "no-store"})
 
     app.router.add_get("/", index)
     app.router.add_get("/index.html", index)

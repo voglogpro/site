@@ -366,6 +366,7 @@ CREATE TABLE IF NOT EXISTS session_points (
     completed_at TEXT,
     reward_code TEXT,
     reward_redeemed_at TEXT,
+    reward_redeem_request_id TEXT,
     UNIQUE(session_id, seq),
     UNIQUE(session_id, point_id)
 );
@@ -496,6 +497,10 @@ class Database:
                     pass      # колонка уже есть — это нормально
         try:
             await self._db.execute("ALTER TABLE session_points ADD COLUMN reward_redeemed_at TEXT")
+        except Exception:
+            pass
+        try:
+            await self._db.execute("ALTER TABLE session_points ADD COLUMN reward_redeem_request_id TEXT")
         except Exception:
             pass
         await self._db.execute(
@@ -885,28 +890,13 @@ def darken_tile(data: bytes, palette: dict) -> bytes:
     return buffer.getvalue()
 
 
-# Расход показов карты 2ГИС за сутки: ключ, дата и количество.
-MAPGL_USAGE = {"day": "", "count": 0}
-
-
 def mapgl_key_for(settings: Settings) -> str:
-    """Ключ 2ГИС, пока не исчерпан дневной лимит.
+    """Вернуть клиентский ключ, не считая обычный state как показ карты.
 
-    Когда лимит выбран, ключ не выдаётся, и приложение показывает
-    обычную карту. Квест продолжает работать полностью — меняется
-    только внешний вид подложки.
+    Раньше каждое фоновое обновление состояния и открытие CRM уменьшало
+    самодельный дневной лимит. Реальный показ учитывает сам 2ГИС при
+    создании MapGL, поэтому сериализация ключа не должна его расходовать.
     """
-    if not settings.mapgl_key:
-        return ""
-    if settings.mapgl_daily_limit <= 0:
-        return settings.mapgl_key
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    if MAPGL_USAGE["day"] != today:
-        MAPGL_USAGE["day"] = today
-        MAPGL_USAGE["count"] = 0
-    if MAPGL_USAGE["count"] >= settings.mapgl_daily_limit:
-        return ""
-    MAPGL_USAGE["count"] += 1
     return settings.mapgl_key
 
 
@@ -1157,12 +1147,13 @@ class QuestService:
             )
             item["reward_used"] = bool(point["reward_redeemed_at"])
             item.pop("reward_code", None)
+            item.pop("reward_redeem_request_id", None)
             # Расстояние теперь вычисляется только на устройстве пользователя.
             # Координата участника не отправляется и не хранится на сервере.
             item["distance_m"] = None
             item["map_url"] = f"https://yandex.ru/maps/?pt={point['longitude']},{point['latitude']}&z=17&l=map"
             item["yandex_route_url"] = f"https://yandex.ru/maps/?rtext=~{point['latitude']},{point['longitude']}&rtt=bc"
-            item["dgis_route_url"] = f"https://2gis.ru/routeSearch/to/{point['longitude']},{point['latitude']}/go"
+            item["dgis_route_url"] = f"https://2gis.ru/directions/tab/car/points/|{point['longitude']},{point['latitude']}"
             if previous_point:
                 route_distance_m += haversine_m(
                     previous_point["latitude"], previous_point["longitude"],
@@ -1405,7 +1396,7 @@ class QuestService:
             await db.execute("UPDATE sessions SET status='active',current_seq=? WHERE id=?", (min(3, progress["completed"] + 1), session_id))
         return True
 
-    async def redeem_reward(self, identity: TelegramIdentity, seq: int) -> dict:
+    async def redeem_reward(self, identity: TelegramIdentity, seq: int, request_id: str) -> dict:
         """Одноразово показать промокод уже полученного подарка.
 
         Транзакционная блокировка не даёт двум быстрым нажатиям или двум
@@ -1414,6 +1405,9 @@ class QuestService:
         """
         if seq not in (1, 2, 3):
             raise QuestError("bad_reward", "Награда не найдена.", 404)
+        request_id = (request_id or "").strip()
+        if not (16 <= len(request_id) <= 100) or not re.fullmatch(r"[A-Za-z0-9._:-]+", request_id):
+            raise QuestError("bad_request_id", "Не удалось безопасно открыть промокод. Попробуй ещё раз.", 400)
         async with self.lock_for(identity.user_id):
             async with self.db.transaction() as db:
                 point = await (await db.execute(
@@ -1425,12 +1419,20 @@ class QuestService:
                 if not point or not point["completed_at"] or not point["reward_code"]:
                     raise QuestError("reward_locked", "Сначала получи штамп этой точки.", 409)
                 if point["reward_redeemed_at"]:
-                    raise QuestError("reward_used", "Этот промокод уже был показан и отмечен как использованный.", 409)
-                redeemed_at = iso()
-                await db.execute(
-                    "UPDATE session_points SET reward_redeemed_at=? WHERE id=? AND reward_redeemed_at IS NULL",
-                    (redeemed_at, point["id"]),
-                )
+                    # Повтор с тем же id означает, что сервер успел отметить
+                    # код, но первый HTTP-ответ оборвался. Возвращаем ровно
+                    # тот же результат, чтобы пользователь не потерял подарок.
+                    if point["reward_redeem_request_id"] != request_id:
+                        raise QuestError("reward_used", "Этот промокод уже был показан и отмечен как использованный.", 409)
+                    redeemed_at = point["reward_redeemed_at"]
+                else:
+                    redeemed_at = iso()
+                    await db.execute(
+                        """UPDATE session_points
+                           SET reward_redeemed_at=?,reward_redeem_request_id=?
+                           WHERE id=? AND reward_redeemed_at IS NULL""",
+                        (redeemed_at, request_id, point["id"]),
+                    )
                 data = await self._state_in_tx(db, identity.user_id)
                 return {
                     "data": data,
@@ -2544,8 +2546,9 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         # Исходник лежит прямо в этом файле, чтобы обновление проекта сводилось
         # к замене index.html и main.py. Отдаётся из корня: иначе область
         # действия ограничится /static/ и не покроет саму страницу квеста.
+        safe_build = re.sub(r"[^A-Za-z0-9_.-]", "-", build_version or "dev")[:40]
         return web.Response(
-            text=SERVICE_WORKER_JS,
+            text=SERVICE_WORKER_JS.replace("bbq-sw-v1", f"bbq-sw-{safe_build}"),
             headers={
                 "Content-Type": "application/javascript; charset=utf-8",
                 "Cache-Control": "no-cache",
@@ -2637,7 +2640,10 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         identity = request_identity(request, settings)
         if not limiter.allow(f"redeem:{identity.user_id}", 8):
             raise QuestError("rate_limited", "Подожди минуту и попробуй снова.", 429)
-        result = await service.redeem_reward(identity, int(request.match_info["seq"]))
+        body = await json_body(request, max_keys=2)
+        result = await service.redeem_reward(
+            identity, int(request.match_info["seq"]), str(body.get("request_id", ""))
+        )
         return json_response(result)
 
     async def admin_overview(request):
@@ -2776,7 +2782,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         for row in rows:
             writer.writerow([_csv_safe(row[key]) for key in row.keys()])
         body = "\ufeff" + output.getvalue()
-        return web.Response(body=body.encode("utf-8"), content_type="text/csv", headers={"Content-Disposition": 'attachment; filename="bibibike-premium.csv"', "Cache-Control": "no-store"})
+        return web.Response(body=body.encode("utf-8"), content_type="text/csv", headers={"Content-Disposition": 'attachment; filename="bbbike-premium.csv"', "Cache-Control": "no-store"})
 
     app.router.add_get("/", index)
     app.router.add_get("/index.html", index)
@@ -2844,7 +2850,11 @@ def _build_fingerprint() -> str:
     """
     base = Path(__file__).resolve().parent
     digest = hashlib.sha256()
-    for name in ("main.py", "index.html", "admin.html"):
+    for name in (
+        "main.py", "index.html", "admin.html", "static/bb-bike-logo.jpg",
+        "static/admin.css", "static/vendor/leaflet.css",
+        "static/vendor/leaflet-1.9.4.asset",
+    ):
         try:
             digest.update((base / name).read_bytes())
         except OSError:

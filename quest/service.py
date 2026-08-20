@@ -211,7 +211,7 @@ class QuestService:
             item["distance_m"] = None
             item["map_url"] = f"https://yandex.ru/maps/?pt={point['longitude']},{point['latitude']}&z=17&l=map"
             item["yandex_route_url"] = f"https://yandex.ru/maps/?rtext=~{point['latitude']},{point['longitude']}&rtt=bc"
-            item["dgis_route_url"] = f"https://2gis.ru/routeSearch/to/{point['longitude']},{point['latitude']}/go"
+            item["dgis_route_url"] = f"https://2gis.ru/directions/tab/car/points/|{point['longitude']},{point['latitude']}"
             if previous_point:
                 route_distance_m += haversine_m(
                     previous_point["latitude"], previous_point["longitude"],

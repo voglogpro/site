@@ -28,6 +28,8 @@
 html,body{min-height:100%;margin:0;background:var(--canvas);color:var(--ink);font-family:var(--font)}
 html{scroll-behavior:smooth}
 body{-webkit-font-smoothing:antialiased;overscroll-behavior:none}
+body.modal-open{overflow:hidden}
+.offline-banner{position:fixed;z-index:980;left:50%;top:calc(max(8px,env(safe-area-inset-top)) + 55px);transform:translateX(-50%);width:max-content;max-width:calc(100vw - 28px);padding:8px 12px;border:1px solid #ffbe3c55;border-radius:999px;background:#271d0def;color:#ffe2a4;font:700 11px/1.2 var(--font);box-shadow:0 8px 24px #0008}
 button,input{font:inherit;color:inherit}
 button{cursor:pointer}
 a{color:var(--stamp)}
@@ -61,7 +63,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .btn.secondary{background:#09190f}
 .btn.quiet{border-color:transparent;background:transparent;color:var(--muted)}
 .btn:disabled{opacity:.55}
-.btn:focus-visible,.stamp-slot:focus-visible,.passport-place:focus-visible,.brand:focus-visible,.navigator-list button:focus-visible,.locate-mini:focus-visible,.icon-button:focus-visible,input:focus-visible{outline:3px solid var(--cyan);outline-offset:2px}
+.btn:focus-visible,.stamp-slot:focus-visible,.passport-place:focus-visible,.partner-card:focus-visible,.tab:focus-visible,.pf-row:focus-visible,.map-chip:focus-visible,.map-theme-toggle:focus-visible,.brand:focus-visible,.navigator-list button:focus-visible,.locate-mini:focus-visible,.icon-button:focus-visible,input:focus-visible{outline:3px solid var(--cyan);outline-offset:2px}
 
 /* Обложка */
 .passport-cover{position:relative;isolation:isolate;min-height:calc(100dvh - max(20px,env(safe-area-inset-top)) - max(30px,env(safe-area-inset-bottom)));overflow:hidden;padding:8px 4px 18px;border:0;border-radius:0;background:transparent}
@@ -285,7 +287,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
   font:800 17px/1 var(--font);transition:transform .18s ease,background .18s ease}
 .map-theme-toggle:active{transform:scale(.92)}
 .map-theme-toggle[aria-busy="true"]{opacity:.55;pointer-events:none}
-.map-geo{position:absolute;z-index:520;right:12px;bottom:calc(var(--sheet-peek) + var(--tabbar-h) + 14px);
+.map-geo{position:absolute;z-index:520;right:12px;bottom:calc(var(--sheet-peek) + var(--tabbar-h) + env(safe-area-inset-bottom,0px) + 14px);
   height:44px;padding:0 15px;border-radius:14px;border:1px solid rgba(143,227,0,.34);
   background:rgba(7,20,13,.92);backdrop-filter:blur(12px);color:var(--green);
   display:flex;align-items:center;gap:8px;font:800 13.5px/1 var(--font);
@@ -293,7 +295,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .map-geo .ic{width:19px;height:19px;flex:none}
 .map-geo.busy{opacity:.55}
 .route-info{position:absolute;z-index:520;left:12px;right:12px;
-  bottom:calc(var(--sheet-peek) + var(--tabbar-h) + 70px);
+  bottom:calc(var(--sheet-peek) + var(--tabbar-h) + env(safe-area-inset-bottom,0px) + 70px);
   display:none;align-items:center;justify-content:center;gap:8px;padding:10px 14px;
   border-radius:14px;background:rgba(7,20,13,.92);backdrop-filter:blur(12px);
   border:1px solid rgba(143,227,0,.34);color:#dff7c4;font:600 13px/1 var(--font);
@@ -323,6 +325,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .loc-grab{flex:none;padding:9px 0 4px;display:grid;place-items:center;cursor:grab;touch-action:none}
 .loc-grab i{width:42px;height:4px;border-radius:99px;background:rgba(255,255,255,.22);display:block}
 .loc-head{flex:none;padding:2px 18px 12px;display:flex;gap:12px;align-items:flex-start}
+.loc-head{width:100%;border:0;background:transparent;color:inherit;text-align:left}
 .loc-head .loc-col{flex:1;min-width:0}
 .loc-eyebrow{margin:0 0 5px;font:800 10.5px/1 var(--mono);letter-spacing:.12em;
   text-transform:uppercase;color:var(--green)}
@@ -379,7 +382,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 @keyframes scan-line{0%,100%{transform:translateY(-90px);opacity:.35}50%{transform:translateY(90px);opacity:1}}
 @keyframes stamp-in{0%{opacity:0;transform:scale(1.42) rotate(-14deg)}65%{opacity:1;transform:scale(.96) rotate(-5deg)}100%{transform:scale(1) rotate(-7deg)}}
 @media(max-height:700px){.cover-copy{margin:5dvh 0 3dvh}.cover-copy h1{font-size:38px}.route-stage{min-height:32dvh}.stamp-success,.saved-reward{padding-top:4dvh}.stamp-seal{width:150px;height:150px;margin-bottom:24px}.stamp-seal:before{width:175px;height:175px}.stamp-seal strong{font-size:22px}}
-@media(max-height:620px){.passport-cover{padding:10px 12px 8px}.cover-brand{font-size:9px}.cover-brand img{width:34px;height:34px}.cover-copy{margin:9px 0 8px}.cover-copy .micro{display:none}.cover-copy h1{margin-bottom:6px;font-size:31px}.cover-copy>p:last-child{font-size:12px;line-height:1.3}.cover-stamps{margin-bottom:5px}.cover-stamps span{height:38px}.cover-stamps small{display:none}.cover-facts{display:none}.consent{grid-template-columns:17px 1fr;gap:6px;margin:5px 0 6px;font-size:9px;line-height:1.25}.consent input{width:16px;height:16px}.cover-button{min-height:48px}.text-button{min-height:32px;font-size:12px}}
+@media(max-height:620px){.passport-cover{padding:10px 12px 8px}.cover-brand{font-size:9px}.cover-brand img{width:34px;height:34px}.cover-copy{margin:9px 0 8px}.cover-copy .micro{display:none}.cover-copy h1{margin-bottom:6px;font-size:31px}.cover-copy>p:last-child{font-size:12px;line-height:1.3}.cover-stamps{margin-bottom:5px}.cover-stamps span{height:38px}.cover-stamps small{display:none}.cover-facts{display:none}.consent{grid-template-columns:20px 1fr;gap:8px;margin:7px 0 8px;font-size:11px;line-height:1.3}.consent input{width:19px;height:19px}.cover-button{min-height:48px}.text-button{min-height:44px;font-size:12px}}
 @media(max-width:350px){.app{padding-inline:10px}.route-stage{margin-inline:-10px}.stamp-rail{grid-template-columns:repeat(3,minmax(0,1fr)) 53px}.stamp-total span{display:none}.cover-copy h1{font-size:36px}.passport-grid{grid-template-columns:1fr}.passport-place,.passport-place:nth-child(3){grid-column:1;min-height:102px;grid-template-columns:82px 1fr 20px;grid-template-rows:1fr}.passport-place .mini-stamp,.passport-place:nth-child(3) .mini-stamp{grid-column:1;grid-row:1;width:82px}.passport-place>div:nth-child(2),.passport-place:nth-child(3)>div:nth-child(2){grid-column:2;grid-row:1;align-self:center}.passport-place>svg,.passport-place:nth-child(3)>svg{grid-column:3;grid-row:1}.mini-stamp span{max-width:70px}.reward-code button span{display:none}.locate-mini span{max-width:95px}}
 @media(max-width:350px) and (max-height:620px){.cover-copy h1{font-size:31px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
@@ -550,14 +553,14 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 /* ============================================================
    НАВИГАЦИЯ И ПРОФИЛЬ
    ============================================================ */
-.app{padding-bottom:86px}          /* место под нижнюю панель */
+.app.with-tabbar{padding-bottom:86px} /* место под нижнюю панель только там, где она есть */
 
 .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:900;display:grid;
   grid-template-columns:repeat(4,1fr);gap:2px;padding:8px 12px
   calc(8px + env(safe-area-inset-bottom));background:rgba(7,17,11,.92);
   backdrop-filter:blur(14px);box-shadow:inset 0 1px 0 var(--line)}
 .tabbar .tab{position:relative;display:grid;justify-items:center;gap:4px;padding:7px 2px;
-  border:0;background:transparent;color:#5d6f63;font:700 10px/1 var(--font);
+  border:0;background:transparent;color:#809186;font:700 10px/1 var(--font);
   border-radius:12px;cursor:pointer;transition:color .18s,background-color .18s}
 .tabbar .tab.on{color:var(--green);background:rgba(143,227,0,.09)}
 .tabbar .tab .ic{width:22px;height:22px;display:block}
@@ -919,6 +922,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 <script>
 const tg=window.Telegram?.WebApp,initData=tg?.initData||'',root=document.getElementById('app'),modal=document.getElementById('modal');
 let state=null,botUsername='',localPosition=null,pointOrder=[],selectedSeq=null,modalTrigger=null,questMap=null,rasterBaseLayer=null;
+let mapResizeObserver=null,routeRequestToken=0;
 let qrPopupOpen=false,syncInFlight=false,lastBuildVersion='',pendingAutoRender=false;
 const dev=location.hostname==='127.0.0.1'||location.hostname==='localhost';
 const MAP_THEME_KEY='bbq-map-theme-v1';
@@ -929,6 +933,7 @@ function requestId(){return crypto.randomUUID?.()||Date.now()+'-'+Math.random()}
    fetch может висеть минутами, а человек смотрит на замерший экран. */
 const API_TIMEOUT_MS=15000;
 let offlineMode=false;
+function setOffline(value){offlineMode=!!value;root.querySelector('.offline-banner')?.remove();if(offlineMode)root.insertAdjacentHTML('afterbegin','<div class="offline-banner" role="status">Нет сети · показан сохранённый прогресс</div>')}
 async function api(path,options={}){
   const authData=initData||(dev?'dev':'');
   const ctrl=typeof AbortController!=='undefined'?new AbortController():null;
@@ -937,12 +942,13 @@ async function api(path,options={}){
   try{
     r=await fetch(path,{...options,signal:ctrl?.signal,headers:{Authorization:'tma '+authData,'Content-Type':'application/json',...(options.headers||{})}});
   }catch(err){
+    setOffline(true);
     throw new Error(err?.name==='AbortError'?'Сеть отвечает слишком долго. Попробуй ещё раз':'Нет связи с сервером');
   }finally{clearTimeout(timer)}
   const p=await r.json().catch(()=>({ok:false,message:'Сервис не ответил'}));
   if(r.status===401)throw new Error('Telegram не подтвердил вход. Закрой и открой квест заново');
   if(!r.ok||p.ok===false)throw new Error(p.message||'Ошибка');
-  offlineMode=false;
+  setOffline(false);
   return p}
 
 /* Паспорт и промокоды должны открываться даже без сети: человек уже
@@ -952,8 +958,8 @@ function cacheState(value){try{localStorage.setItem(CACHE_KEY,JSON.stringify({at
 function cachedState(){try{const raw=localStorage.getItem(CACHE_KEY);if(!raw)return null;const parsed=JSON.parse(raw);return parsed?.data||null}catch(_){return null}}
 function eventLog(event_type,point_id=null,navigator=''){api('/api/quest/event',{method:'POST',keepalive:true,body:JSON.stringify({event_type,point_id,navigator,request_id:requestId()})}).catch(()=>{})}
 function toast(text){const n=document.getElementById('toast');n.textContent=text;n.classList.remove('hidden');clearTimeout(n._t);n._t=setTimeout(()=>n.classList.add('hidden'),3200)}
-function destroyQuestMap(){if(questMap){questMap.remove();questMap=null}rasterBaseLayer=null;if(glRoute){try{glRoute.destroy()}catch(_){}glRoute=null}routeLayer=null;routeSeq=null;if(glMap){try{glMap.destroy()}catch(_){}glMap=null;glStyleId='';glClear()}}
-function show(html){destroyQuestMap();root.innerHTML=html;window.scrollTo({top:0,behavior:'instant'});setTimeout(syncBackButton,0)}
+function destroyQuestMap(){routeRequestToken++;mapResizeObserver?.disconnect?.();mapResizeObserver=null;if(questMap){questMap.remove();questMap=null}rasterBaseLayer=null;if(glRoute){try{glRoute.destroy()}catch(_){}glRoute=null}routeLayer=null;routeSeq=null;if(glMap){try{glMap.destroy()}catch(_){}glMap=null;glStyleId='';glClear()}}
+function show(html){destroyQuestMap();root.innerHTML=html;if(offlineMode)root.insertAdjacentHTML('afterbegin','<div class="offline-banner" role="status">Нет сети · показан сохранённый прогресс</div>');root.closest('.app')?.classList.toggle('with-tabbar',!!root.querySelector('.tabbar'));window.scrollTo({top:0,behavior:'auto'});requestAnimationFrame(()=>{const target=[...root.querySelectorAll('h1,h2')].find(node=>!node.closest('button'))||root.querySelector('section');if(target){target.setAttribute('tabindex','-1');target.focus({preventScroll:true})}});setTimeout(syncBackButton,0)}
 function completed(){return (state?.points||[]).filter(p=>p.completed_at).length}
 function pointBySeq(seq){return state?.points?.find(p=>p.seq===Number(seq))}
 function openPoints(){return (state?.points||[]).filter(p=>!p.completed_at)}
@@ -967,7 +973,7 @@ function completedTime(value){if(!value)return '';const d=new Date(value);return
 function distance(a,b,c,d){const r=6371000,x=(c-a)*Math.PI/180,y=(d-b)*Math.PI/180,z=Math.sin(x/2)**2+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(y/2)**2;return 2*r*Math.atan2(Math.sqrt(z),Math.sqrt(1-z))}
 function localDistance(p){return localPosition?distance(localPosition.lat,localPosition.lon,p.latitude,p.longitude):null}
 function fmt(m){return m==null?'':m<1000?Math.round(m)+' м':(m/1000).toFixed(1).replace('.',',')+' км'}
-function header(right=''){return `<header class="topbar"><button class="brand" onclick="routeScreen()" aria-label="К маршруту"><img src="/static/bb-bike-logo.jpg" alt=""><span>Квест <b>BBBIKE</b></span></button>${right||`<span class="geo-live"><s></s>${localPosition?'гео в эфире':'гео по кнопке'}</span>`}</header>`}
+function header(right=''){return `<header class="topbar"><button class="brand" onclick="routeScreen()" aria-label="К маршруту"><img src="/static/bb-bike-logo.jpg" alt=""><span>Квест <b>BBBIKE</b></span></button>${right||`<span class="geo-live"><s></s>${localPosition?'позиция получена':'гео по кнопке'}</span>`}</header>`}
 /* Набор иконок один — см. ICONS ниже. Раньше здесь была вторая функция icon(),
    которая перетиралась объявлением ниже, и половина иконок исчезала. */
 function stampRail(active=selectedSeq){return `<section class="stamp-rail" aria-label="Отметки квеста">${(state?.points||[]).map(p=>{const done=!!p.completed_at,chosen=Number(active)===p.seq,label=`${p.seq}. ${p.point_name}. ${done?'Штамп поставлен':'Штамп не поставлен'}`;return `<button class="stamp-slot ${done?'stamped':''} ${chosen?'selected':''}" aria-label="${esc(label)}" onclick="selectPoint(${p.seq})"><span>${done?esc(shortName(p)):p.seq}</span>${done?`<small>${completedTime(p.completed_at)}</small>`:'<small>точка</small>'}</button>`}).join('')}<div class="stamp-total"><b>${completed()}</b><span>из 3<br>штампов</span></div></section>`}
@@ -1178,7 +1184,9 @@ function initGlMap(node,p){
       try{glMap?.destroy()}catch(_){}glMap=null;glClear();node.innerHTML='';initRasterMap(node,p)};
     glMap.on?.('styleload',()=>{styleReady=true;node.classList.add('map-ready')});
     glMap.on?.('styleloaderror',fallback);
-    glMap.on?.('error',()=>fallback(true));
+    glMap.on?.('error',()=>{
+      if(!styleReady)return fallback(true);
+      mapNotice(node,'Часть карты временно не загрузилась — повторяем автоматически.')});
     setTimeout(fallback,8000);
     (state?.points||[]).forEach(point=>{
       const marker=new mapgl.Marker(glMap,{
@@ -1225,14 +1233,14 @@ function initUserMap(p){
   if(useMapgl())return initGlMap(node,p);
   return initRasterMap(node,p)}
 
-function initRasterMap(node,p){const n=document.getElementById('quest-map');if(!n)return;const themeButton=document.getElementById('map-theme-toggle');if(themeButton)themeButton.hidden=false;if(!window.L){n.innerHTML='<div class="user-map-fallback"><b>Карта не загрузилась</b><span>Маршрут всё равно откроется в Яндекс Картах или 2ГИС.</span></div>';return}const raw=state?.map?.bounds||{south:43.60,west:40.10,north:43.77,east:40.37},area=L.latLngBounds([raw.south,raw.west],[raw.north,raw.east]);rasterBaseLayer=null;questMap=L.map(n,{zoomControl:false,attributionControl:false,preferCanvas:true,maxBounds:area,maxBoundsViscosity:1,minZoom:10,maxZoom:18,scrollWheelZoom:false,boxZoom:false,fadeAnimation:false,zoomAnimation:true,markerZoomAnimation:true});rasterMarkers=new Map();mountTiles(n,area);const pointCoords=[];(state?.points||[]).forEach(point=>{const coords=[point.latitude,point.longitude];pointCoords.push(coords);if(state?.scan_requires_geo&&!point.completed_at){L.circle(coords,{radius:point.radius_m||100,color:'#8fe300',weight:1,opacity:.55,fillColor:'#8fe300',fillOpacity:.08,interactive:false}).addTo(questMap)}const m=L.marker(coords,{icon:pointMarkerIcon(point),keyboard:true,title:point.point_name,riseOnHover:true}).addTo(questMap);rasterMarkers.set(point.seq,m);m.getElement()?.setAttribute('aria-label',`${point.seq}. ${point.point_name}`);m.on('click',()=>{sheetOpen=true;selectPoint(point.seq)})});const target=[p.latitude,p.longitude],visible=[...pointCoords];if(localPosition){const userCoords=[localPosition.lat,localPosition.lon],inside=area.contains(userCoords);L.marker(userCoords,{icon:L.divIcon({className:'bb-user-marker-wrap',html:'<span class="bb-user-marker"><i></i></span>',iconSize:[34,34],iconAnchor:[17,17]}),interactive:false}).addTo(questMap);if(inside){visible.push(userCoords);if(localDistance(p)<30000)L.polyline([userCoords,target],{color:'#83ed36',weight:3,dashArray:'7 8',opacity:.8}).addTo(questMap)}}const bottomPad=Math.round(window.innerHeight*(sheetOpen?0.5:0.22))+40;if(visible.length>1)questMap.fitBounds(visible,{paddingTopLeft:[46,96],paddingBottomRight:[46,bottomPad],maxZoom:15});else questMap.setView(target,15);/* Карта создаётся до того, как браузер закончил раскладку полноэкранного
+function initRasterMap(node,p){const n=document.getElementById('quest-map');if(!n)return;const themeButton=document.getElementById('map-theme-toggle');if(themeButton)themeButton.hidden=false;if(!window.L){n.innerHTML='<div class="user-map-fallback"><b>Карта не загрузилась</b><span>Маршрут всё равно откроется в Яндекс Картах или 2ГИС.</span></div>';return}const raw=state?.map?.bounds||{south:43.60,west:40.10,north:43.77,east:40.37},area=L.latLngBounds([raw.south,raw.west],[raw.north,raw.east]);rasterBaseLayer=null;questMap=L.map(n,{zoomControl:false,attributionControl:false,preferCanvas:true,maxBounds:area,maxBoundsViscosity:1,minZoom:10,maxZoom:18,scrollWheelZoom:false,boxZoom:false,keyboard:false,fadeAnimation:false,zoomAnimation:true,markerZoomAnimation:true});rasterMarkers=new Map();mountTiles(n,area);const pointCoords=[];(state?.points||[]).forEach(point=>{const coords=[point.latitude,point.longitude];pointCoords.push(coords);if(state?.scan_requires_geo&&!point.completed_at){L.circle(coords,{radius:point.radius_m||100,color:'#8fe300',weight:1,opacity:.55,fillColor:'#8fe300',fillOpacity:.08,interactive:false}).addTo(questMap)}const m=L.marker(coords,{icon:pointMarkerIcon(point),keyboard:false,title:point.point_name,riseOnHover:true}).addTo(questMap);rasterMarkers.set(point.seq,m);m.getElement()?.setAttribute('aria-label',`${point.seq}. ${point.point_name}`);m.on('click',()=>{sheetOpen=true;selectPoint(point.seq)})});const target=[p.latitude,p.longitude],visible=[...pointCoords];if(localPosition){const userCoords=[localPosition.lat,localPosition.lon],inside=area.contains(userCoords);L.marker(userCoords,{icon:L.divIcon({className:'bb-user-marker-wrap',html:'<span class="bb-user-marker"><i></i></span>',iconSize:[34,34],iconAnchor:[17,17]}),interactive:false}).addTo(questMap);if(inside){visible.push(userCoords);if(localDistance(p)<30000)L.polyline([userCoords,target],{color:'#83ed36',weight:3,dashArray:'7 8',opacity:.8}).addTo(questMap)}}const bottomPad=Math.round(window.innerHeight*(sheetOpen?0.5:0.22))+40;if(visible.length>1)questMap.fitBounds(visible,{paddingTopLeft:[46,96],paddingBottomRight:[46,bottomPad],maxZoom:15});else questMap.setView(target,15);/* Карта создаётся до того, как браузер закончил раскладку полноэкранного
    экрана, и слой линий успевает посчитать себе нулевой размер — маршрут
    и пунктир до участника оказывались за пределами видимой области.
    Пересчитываем размер после раскладки и следим за ним дальше. */
   const resize=()=>questMap?.invalidateSize({animate:false});
   requestAnimationFrame(resize);
   setTimeout(resize,120);setTimeout(resize,450);
-  if(window.ResizeObserver){const ro=new ResizeObserver(()=>resize());ro.observe(n)}}
+  if(window.ResizeObserver){mapResizeObserver?.disconnect?.();mapResizeObserver=new ResizeObserver(()=>resize());mapResizeObserver.observe(n)}}
 function stickyActions(p){if(p.completed_at)return `<div class="sticky-actions"><button class="btn primary" onclick="showReward(${p.seq})">Открыть подарок</button><button class="btn secondary" onclick="passportScreen()">Мой квест</button></div>`;return `<div class="sticky-actions"><button class="btn primary" onclick="chooseNavigator(${p.seq})">${icon('route')}<span>Построить маршрут${localDistance(p)!=null?' · '+fmt(localDistance(p)):''}</span></button><button class="btn secondary" onclick="scanPoint(${p.seq})">${icon('scan')}<span>Поставить штамп · QR</span></button></div>`}
 /* Адрес поддержки приходит из настроек сервера (SUPPORT_URL), а не зашит в вёрстку. */
 const SUPPORT_FALLBACK='https://t.me/bb_bike';
@@ -1268,7 +1276,7 @@ function tabbar(active){
     ['profile','Профиль','user',()=>'profileScreen()']
   ];
   return `<nav class="tabbar">${items.map(([id,label,ic,fn])=>
-    `<button class="tab ${active===id?'on':''}" onclick="${fn()}">
+    `<button class="tab ${active===id?'on':''}" onclick="${fn()}" ${active===id?'aria-current="page"':''}>
        ${icon(ic)}<span>${label}</span>${id==='passport'&&n>0?`<i class="tab-badge">${n}</i>`:''}
      </button>`).join('')}</nav>`}
 
@@ -1287,7 +1295,7 @@ function routeToPoint(seq){
 
 function partnerFlag(p){return p.completed_at
   ?(p.reward_used?'<span class="partner-flag used">Промокод использован</span>':'<span class="partner-flag ready">Можно получить</span>')
-  :'<span class="partner-flag pending">Акция ждёт</span>'}
+  :'<span class="partner-flag pending">Нужен штамп</span>'}
 
 function partnerCard(p){
   const d=localDistance(p);
@@ -1434,6 +1442,7 @@ async function applyPendingScan(){
     const payload={qr_code:code,request_id:requestId()};
     if(state?.scan_requires_geo&&localPosition){payload.latitude=localPosition.lat;payload.longitude=localPosition.lon}
     state=(await api('/api/quest/scan',{method:'POST',body:JSON.stringify(payload)})).data;
+    cacheState(state);
     const ev=state.event||{};
     if(completed()>before){
       tg?.HapticFeedback?.notificationOccurred?.('success');
@@ -1445,7 +1454,7 @@ async function applyPendingScan(){
   }catch(x){toast(x.message)}
   return false}
 
-function cover(){rulesShown=false;const pts=(state?.points||[]).slice(0,3);show(`<section class="passport-cover">
+function cover(){const pts=(state?.points||[]).slice(0,3);show(`<section class="passport-cover">
   <div class="cover-halo"></div>
   ${pendingScan?'<div class="scan-banner">Ты отсканировал табличку партнёра. Прими правила — и штамп за эту точку засчитается сразу.</div>':''}
   <div class="cover-brand"><span class="cover-bb">BBBIKE</span><b>Квест Красной Поляны</b></div>
@@ -1457,11 +1466,10 @@ function cover(){rulesShown=false;const pts=(state?.points||[]).slice(0,3);show(
   <label class="consent"><input id="rules-ok" type="checkbox"><span>Принимаю <a href="/privacy.html" target="_blank">правила квеста</a>. Разовая геопозиция не сохраняется ботом.</span></label>
   <button class="btn primary cover-button" onclick="startQuest(event)"><span>Начать квест</span></button>
   <button class="text-button" onclick="rules()">Как всё работает</button></section>`)}
-async function startQuest(e){if(!document.getElementById('rules-ok')?.checked)return toast('Сначала прими правила квеста');e.currentTarget.disabled=true;try{state=(await api('/api/quest/start',{method:'POST',body:JSON.stringify({privacy_accepted:true,request_id:requestId()})})).data;selectedSeq=openPoints()[0]?.seq||state.points[0]?.seq;
+async function startQuest(e){if(!document.getElementById('rules-ok')?.checked)return toast('Сначала прими правила квеста');const sawRules=rulesShown;e.currentTarget.disabled=true;try{state=(await api('/api/quest/start',{method:'POST',body:JSON.stringify({privacy_accepted:true,request_id:requestId()})})).data;cacheState(state);selectedSeq=openPoints()[0]?.seq||state.points[0]?.seq;
     // Пришёл по QR — сразу засчитываем точку, правила покажем в профиле.
-    rulesShown=true;
     if(await applyPendingScan())return;
-    rules();
+    if(sawRules){rulesShown=true;routeScreen()}else rules();
   }catch(x){toast(x.message);e.currentTarget.disabled=false}}
 /* Маршрут рисуется прямо в приложении: линия по дорогам, длина и время.
    Кнопки внешних навигаторов остаются — они нужны для голосовой навигации
@@ -1473,25 +1481,36 @@ function clearRoute(){
   if(glRoute){try{glRoute.destroy()}catch(_){}glRoute=null}
   routeLayer=null;routeSeq=null}
 
-async function drawRoute(seq){
+async function waitForMap(token,seq){
+  for(let i=0;i<60;i++){
+    if(token!==routeRequestToken||selectedSeq!==seq)return false;
+    if((mapEngine==='mapgl'&&glMap)||(mapEngine==='raster'&&questMap))return true;
+    await new Promise(resolve=>setTimeout(resolve,100))}
+  return false}
+
+async function drawRoute(seq,ev){
   const p=pointBySeq(seq);
   if(!p)return;
+  let token=++routeRequestToken;const button=ev?.currentTarget;
+  if(button){button.disabled=true;button.setAttribute('aria-busy','true')}
   if(!localPosition){
     /* Не отправляем человека искать другую кнопку: сразу спрашиваем
        позицию и, получив её, строим маршрут тем же нажатием. */
     toast('Нужна твоя геопозиция — Telegram спросит разрешение');
     const pos=await oneLocation();
-    if(!pos){toast('Без геопозиции маршрут не построить. Разреши доступ и попробуй снова');return}
+    if(!pos){toast('Без геопозиции маршрут не построить. Разреши доступ и попробуй снова');if(button){button.disabled=false;button.removeAttribute('aria-busy')}return}
     localPosition=pos;
     routeScreen(selectedSeq,false);
-    await new Promise(r=>setTimeout(r,300));
+    token=++routeRequestToken;
+    if(!await waitForMap(token,seq))return;
   }
-  if(routeSeq===seq){clearRoute();renderRouteInfo(null);return}
+  if(routeSeq===seq){clearRoute();renderRouteInfo(null);if(button){button.disabled=false;button.removeAttribute('aria-busy')}return}
   toast('Строю маршрут…');
   try{
     const q=new URLSearchParams({from_lat:localPosition.lat,from_lon:localPosition.lon,
       to_lat:p.latitude,to_lon:p.longitude,mode:'bike'});
     const data=await api('/api/quest/route?'+q.toString());
+    if(token!==routeRequestToken||selectedSeq!==seq||!document.querySelector('.map-screen'))return;
     if(mapEngine==='mapgl'){
       if(!glMap)return;
       clearRoute();
@@ -1522,7 +1541,8 @@ async function drawRoute(seq){
       {paddingTopLeft:[46,96],paddingBottomRight:[46,Math.round(window.innerHeight*(sheetOpen?.5:.24))+40]});
     renderRouteInfo(data);
     tg?.HapticFeedback?.impactOccurred?.('light');
-  }catch(x){toast(x.message||'Не удалось построить маршрут')}}
+  }catch(x){toast(x.message||'Не удалось построить маршрут')}
+  finally{if(button?.isConnected){button.disabled=false;button.removeAttribute('aria-busy')}}}
 
 function renderRouteInfo(data){
   const box=document.getElementById('route-info');
@@ -1544,15 +1564,15 @@ function locSheet(p){
   const thumb=p.photo_url?`<div class="loc-thumb"><img src="${esc(p.photo_url)}" alt="" loading="lazy" onerror="this.closest('.loc-thumb').remove()"></div>`:'';
   const about=p.description?`<p class="loc-about">${esc(p.description)}</p>`:'';
   return `<section class="loc-sheet${sheetOpen?' open':''}" id="loc-sheet" ontouchstart="sheetDragStart(event)">
-    <div class="loc-grab" onclick="toggleSheet()"><i></i></div>
-    <div class="loc-head" onclick="toggleSheet()">
+    <div class="loc-grab" onclick="toggleSheet()" aria-hidden="true"><i></i></div>
+    <button class="loc-head" onclick="toggleSheet()" aria-expanded="${sheetOpen}" aria-controls="loc-body">
       <div class="loc-col">
         <p class="loc-eyebrow">${done?'Штамп получен':`Точка ${p.seq} из 3`}</p>
         <h2>${esc(p.point_name)}</h2>
         <p>${esc(p.address)}${d!=null?' · '+fmt(d):''}</p>
       </div>${thumb}
-    </div>
-    <div class="loc-body">
+    </button>
+    <div class="loc-body" id="loc-body">
       ${hero}${about}
       <div class="loc-facts">
         ${p.partner_hours?`<span class="loc-fact">${esc(p.partner_hours)}</span>`:''}
@@ -1565,7 +1585,7 @@ function locSheet(p){
           ?`<button class="btn primary" onclick="showReward(${p.seq})">Открыть подарок</button>
             <button class="btn secondary" onclick="passportScreen()">Мой квест</button>`
           :`<button class="btn primary" onclick="scanPoint(${p.seq})">${icon('scan')}<span>Поставить штамп · QR</span></button>
-            <button class="btn secondary" onclick="drawRoute(${p.seq})">${icon('route')}<span>${routeSeq===p.seq?'Убрать маршрут с карты':'Показать маршрут на карте'}</span></button>
+            <button class="btn secondary" onclick="drawRoute(${p.seq},event)">${icon('route')}<span>${routeSeq===p.seq?'Убрать маршрут с карты':'Показать маршрут на карте'}</span></button>
             <button class="btn ghost-link" onclick="chooseNavigator(${p.seq})">Открыть в навигаторе${d!=null?' · '+fmt(d):''}</button>`}
       </div>
       <p class="loc-hint">Выбирай любую непройденную точку на карте</p>
@@ -1577,6 +1597,7 @@ function toggleSheet(force){
   if(!el)return;
   sheetOpen=force===undefined?!sheetOpen:!!force;
   el.classList.toggle('open',sheetOpen);
+  el.querySelector('.loc-head')?.setAttribute('aria-expanded',String(sheetOpen));
   tg?.HapticFeedback?.selectionChanged?.();
   syncBackButton()}
 
@@ -1635,14 +1656,13 @@ function sheetDragEnd(){
 function routeScreen(seq=selectedSeq,track=true){
   if(!state?.session)return cover();
   if(!rulesShown&&completed()<3){rulesShown=true;return rules()}
-  if(completed()===3)return passportScreen();
   const pending=openPoints(),fallback=pending[0]||state.points[0];
   let p=pointBySeq(seq)||fallback;
   if(p.completed_at&&pending.length)p=pending[0];
   selectedSeq=p.seq;
   if(track){eventLog('catalog_open');eventLog('point_view',p.point_id)}
-  const chips=orderedPoints().map(pt=>`<button data-seq="${pt.seq}" class="map-chip ${pt.seq===p.seq?'active':''} ${pt.completed_at?'done':''}" onclick="selectPoint(${pt.seq})" aria-label="Точка ${pt.seq}">${pt.completed_at?icon('check'):pt.seq}</button>`).join('');
-  show(`<section class="map-screen">
+  const chips=orderedPoints().map(pt=>`<button data-seq="${pt.seq}" class="map-chip ${pt.seq===p.seq?'active':''} ${pt.completed_at?'done':''}" onclick="selectPoint(${pt.seq})" aria-pressed="${pt.seq===p.seq}" aria-label="Точка ${pt.seq}: ${esc(pt.point_name)}. ${pt.seq===p.seq?'Выбрана. ':''}${pt.completed_at?'Штамп получен':'Штамп не получен'}">${pt.completed_at?icon('check'):pt.seq}</button>`).join('');
+  show(`<section class="map-screen" aria-label="Маршрут к точке ${esc(p.point_name)}">
     <div id="quest-map" class="quest-map" aria-label="Карта партнёрских точек"></div>
     <div class="map-top">
       <div class="map-progress-pill"><b>${completed()}/3</b><span>${3-completed()===0?'всё собрано':'штампов собрано'}</span></div>
@@ -1650,23 +1670,23 @@ function routeScreen(seq=selectedSeq,track=true){
       <div class="map-chip-row">${chips}</div>
     </div>
     <div id="route-info" class="route-info"></div>
-    <button class="map-geo" onclick="geoAndRoute(event,${p.seq})">${icon('geo')}<b>${localPosition?'Я здесь':'Где я'}</b></button>
+    <button class="map-geo" onclick="geoAndRoute(event,${p.seq})">${icon('geo')}<b>${localPosition?'Маршрут к точке':'Где я'}</b></button>
     ${locSheet(p)}
   </section>${tabbar('route')}`);
   requestAnimationFrame(()=>initUserMap(p))}
 
 
 function selectPoint(seq){
-  if(state?.campaign?.status!=='active'||state?.session?.status!=='active')
+  if(state?.campaign?.status!=='active'||!['active','completed'].includes(state?.session?.status))
     return toast('Сейчас можно смотреть квест и полученные подарки, но продолжить маршрут нельзя');
-  if(routeSeq!==Number(seq))clearRoute();selectedSeq=Number(seq);
+  routeRequestToken++;if(routeSeq!==Number(seq))clearRoute();selectedSeq=Number(seq);
   const target=pointBySeq(selectedSeq);
   if(!target)return;
   const screen=document.querySelector('.map-screen');
   if(!screen)return routeScreen(selectedSeq);
   // Карта остаётся тем же экземпляром: меняются только чипы и нижняя
   // карточка. Это убирает чёрный кадр при каждом выборе точки.
-  screen.querySelectorAll('.map-chip').forEach(button=>button.classList.toggle('active',Number(button.dataset.seq)===selectedSeq));
+  screen.querySelectorAll('.map-chip').forEach(button=>{const active=Number(button.dataset.seq)===selectedSeq;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active))});
   const oldSheet=document.getElementById('loc-sheet');
   if(oldSheet)oldSheet.outerHTML=locSheet(target);
   const geo=screen.querySelector('.map-geo');
@@ -1733,8 +1753,7 @@ function bikeRoute(seq){
   const p=pointBySeq(seq)||openPoints()[0];
   if(!p)return;
   eventLog('navigator_open',p.point_id,'yandex');
-  const from=localPosition?`${localPosition.lat},${localPosition.lon}`:'';
-  const url=`https://yandex.ru/maps/?rtext=${from}~${p.latitude},${p.longitude}&rtt=bc`;
+  const url=`https://yandex.ru/maps/?rtext=~${p.latitude},${p.longitude}&rtt=bc`;
   tg?.openLink?tg.openLink(url):window.open(url,'_blank','noopener');
 }
 
@@ -1746,10 +1765,10 @@ async function nearest(){try{const pos=await oneLocation();if(!pos)return toast(
 const GEO_TIMEOUT_MS=20000;
 function oneLocation(){return new Promise(resolve=>{let ended=false,browserStarted=false;const finish=v=>{if(!ended){ended=true;resolve(v)}},browser=()=>{if(ended||browserStarted)return;browserStarted=true;navigator.geolocation?navigator.geolocation.getCurrentPosition(v=>finish({lat:v.coords.latitude,lon:v.coords.longitude,accuracy:v.coords.accuracy}),()=>finish(null),{enableHighAccuracy:true,timeout:GEO_TIMEOUT_MS-1500,maximumAge:60000}):finish(null)};setTimeout(()=>finish(null),GEO_TIMEOUT_MS);const manager=tg?.LocationManager,supported=!!manager&&tg?.isVersionAtLeast?.('8.0')===true;if(!supported)return browser();const get=()=>{try{manager.getLocation(v=>v?finish({lat:v.latitude,lon:v.longitude}):browser())}catch(_){browser()}};try{manager.isInited?get():manager.init(get)}catch(_){browser()}})}
 function passportCard(p){const done=!!p.completed_at,status=p.reward_used?'Промокод использован':p.reward_available?'Промокод доступен · один раз':esc(p.address);return `<button class="passport-place ${done?'done':''} ${p.reward_used?'reward-used-card':''}" onclick="${done?`showReward(${p.seq})`:`selectPoint(${p.seq})`}"><div class="mini-stamp"><span>${done?esc(shortName(p)):p.seq}</span>${done?`<small>${p.reward_used?'ИСПОЛЬЗОВАН':completedTime(p.completed_at)+' · QR'}</small>`:'<small>БЕЗ ШТАМПА</small>'}</div><div><b>${esc(p.point_name)}</b><span>${status}</span></div>${icon('arrow')}</button>`}
-function passportScreen(lockMessage=''){sheetOpen=false;if(!lockMessage&&offlineMode)lockMessage='Нет связи. Статусы наград показаны из сохранённого квеста.';if(!lockMessage&&state?.campaign?.status!=='active')lockMessage='Квест сейчас на паузе. Полученные штампы и подарки сохранены.';if(!lockMessage&&state?.session?.status==='expired')lockMessage='Время маршрута закончилось. Полученные штампы и подарки сохранены.';const n=completed(),remaining=openPoints()[0],locked=!!lockMessage,canContinue=remaining&&!locked;show(`${header(`<span class="count-label">${n} / 3</span>${tabbar("passport")}`)}<section class="passport-page ${n===3?'complete':''}">${locked?`<div class="expired-note">${esc(lockMessage)}</div>`:''}<div class="passport-title">${n===3?'<div class="final-bb">BBBIKE</div>':''}<p class="micro">BBBIKE · КРАСНАЯ ПОЛЯНА</p><h1>${n===3?'Квест пройден':'Мой квест'}</h1><p>${n===3?'Все три штампа на месте. Premium готов к проверке.':'Три штампа партнёров · один месяц Premium'}</p></div><div class="reward-warning">Промокод каждого заведения можно получить только один раз. Открывай его рядом с сотрудником — после подтверждения он сразу станет использованным.</div><div class="passport-grid">${(state.points||[]).map(passportCard).join('')}</div><section class="premium-card ${n===3?'unlocked':''}"><img src="/static/bb-bike-logo.jpg" alt=""><div><b>${esc(state.campaign.premium_title)}</b><span>${n===3?'Подписка на 30 дней будет привязана после проверки администратором. '+esc(state.campaign.premium_instruction):`Откроется после ${3-n} ${3-n===1?'штампа':'штампов'}`}</span></div></section>${n===3?`<section class="premium-code"><span>КОД УЧАСТНИКА ДЛЯ ПРОВЕРКИ</span><strong>${esc(state.premium?.public_code||'Оформляется')}</strong><button onclick="copyPremium()">${icon('copy')} Скопировать</button></section>`:''}${canContinue?`<button class="btn primary passport-cta" onclick="selectPoint(${remaining.seq})">К точке «${esc(shortName(remaining))}»</button>`:n===3?'<button class="btn primary passport-cta" onclick="copyPremium()">Скопировать код для проверки</button>':`<a class="btn secondary passport-cta support-link" href="${esc(state.support_url)}">Связаться с поддержкой</a>`}${n===3?'<button class="btn secondary share-passport" onclick="sharePassport()">Поделиться результатом</button>':''}${!locked&&n<3?'<button class="btn quiet" onclick="routeScreen()">Вернуться к маршруту</button>':''}</section>`)}
-function presentModal(html){modalTrigger=document.activeElement;modal.innerHTML=html;const sheet=modal.querySelector('.sheet'),title=sheet?.querySelector('h2')?.textContent?.trim();sheet?.setAttribute('role','dialog');sheet?.setAttribute('aria-modal','true');if(title)sheet?.setAttribute('aria-label',title);syncBackButton();setTimeout(()=>modal.querySelector('button,input')?.focus(),0)}
+function passportScreen(lockMessage=''){sheetOpen=false;if(!lockMessage&&offlineMode)lockMessage='Нет связи. Статусы наград показаны из сохранённого квеста.';if(!lockMessage&&state?.campaign?.status!=='active')lockMessage='Квест сейчас на паузе. Полученные штампы и подарки сохранены.';if(!lockMessage&&state?.session?.status==='expired')lockMessage='Время маршрута закончилось. Полученные штампы и подарки сохранены.';const n=completed(),remaining=orderedPoints().find(p=>!p.completed_at),locked=!!lockMessage,canContinue=remaining&&!locked;show(`${header(`<span class="count-label">${n} / 3</span>${tabbar("passport")}`)}<section class="passport-page ${n===3?'complete':''}">${locked?`<div class="expired-note">${esc(lockMessage)}</div>`:''}<div class="passport-title">${n===3?'<div class="final-bb">BBBIKE</div>':''}<p class="micro">BBBIKE · КРАСНАЯ ПОЛЯНА</p><h1>${n===3?'Квест пройден':'Мой квест'}</h1><p>${n===3?'Все три штампа на месте. Premium готов к проверке.':'Три штампа партнёров · один месяц Premium'}</p></div><div class="reward-warning">Промокод каждого заведения можно получить только один раз. Открывай его рядом с сотрудником — после подтверждения он сразу станет использованным.</div><div class="passport-grid">${(state.points||[]).map(passportCard).join('')}</div><section class="premium-card ${n===3?'unlocked':''}"><img src="/static/bb-bike-logo.jpg" alt=""><div><b>${esc(state.campaign.premium_title)}</b><span>${n===3?'Подписка на 30 дней будет привязана после проверки администратором. '+esc(state.campaign.premium_instruction):`Откроется после ${3-n} ${3-n===1?'штампа':'штампов'}`}</span></div></section>${n===3?`<section class="premium-code"><span>КОД УЧАСТНИКА ДЛЯ ПРОВЕРКИ</span><strong>${esc(state.premium?.public_code||'Оформляется')}</strong><button onclick="copyPremium()">${icon('copy')} Скопировать</button></section>`:''}${canContinue?`<button class="btn primary passport-cta" onclick="selectPoint(${remaining.seq})">К точке «${esc(shortName(remaining))}»</button>`:n===3?'<button class="btn primary passport-cta" onclick="copyPremium()">Скопировать код для проверки</button>':`<a class="btn secondary passport-cta support-link" href="${esc(state.support_url)}">Связаться с поддержкой</a>`}${n===3?'<button class="btn secondary share-passport" onclick="sharePassport()">Поделиться результатом</button>':''}${!locked&&n<3?'<button class="btn quiet" onclick="routeScreen()">Вернуться к маршруту</button>':''}</section>`)}
+function presentModal(html){modalTrigger=document.activeElement;modal.innerHTML=html;root.inert=true;root.setAttribute('aria-hidden','true');document.body.classList.add('modal-open');const sheet=modal.querySelector('.sheet'),title=sheet?.querySelector('h2')?.textContent?.trim();sheet?.setAttribute('role','dialog');sheet?.setAttribute('aria-modal','true');if(title)sheet?.setAttribute('aria-label',title);syncBackButton();setTimeout(()=>(modal.querySelector('input')||modal.querySelector('button'))?.focus(),0)}
 function chooseNavigator(seq){const p=pointBySeq(seq);selectedSeq=seq;presentModal(`<div class="modal" onclick="if(event.target===this)closeModal()"><section class="sheet"><div class="sheet-head"><div><p class="micro">КАК ДОБРАТЬСЯ</p><h2>${esc(p.point_name)}</h2></div><button class="icon-button" aria-label="Закрыть" onclick="closeModal()">×</button></div><p class="sheet-copy">Навигатор сам определит твоё текущее местоположение.</p><div class="navigator-list"><button onclick="openRoute(${seq},'yandex','bc')"><span class="provider yandex">Я</span><b>Яндекс · на велосипеде</b>${icon('arrow')}</button><button onclick="openRoute(${seq},'yandex','pd')"><span class="provider yandex">Я</span><b>Яндекс · пешком</b>${icon('arrow')}</button><button onclick="openRoute(${seq},'2gis','car')"><span class="provider dgis">2</span><b>2ГИС · на машине</b>${icon('arrow')}</button><button onclick="openRoute(${seq},'2gis','pedestrian')"><span class="provider dgis">2</span><b>2ГИС · пешком</b>${icon('arrow')}</button></div><button class="btn quiet" onclick="copyAddress(${seq})">Скопировать адрес</button></section></div>`)}
-function openRoute(seq,provider,mode){const p=pointBySeq(seq);eventLog('navigator_open',p.point_id,provider);const url=provider==='yandex'?`https://yandex.ru/maps/?rtext=~${p.latitude},${p.longitude}&rtt=${mode}`:`https://2gis.ru/routeSearch/rsType/${mode==='pedestrian'?'pedestrian':'car'}/to/${p.longitude},${p.latitude}/go`;closeModal();tg?.openLink?tg.openLink(url,{try_instant_view:false}):window.open(url,'_blank','noopener')}
+function openRoute(seq,provider,mode){const p=pointBySeq(seq);eventLog('navigator_open',p.point_id,provider);const points=encodeURIComponent(`|${p.longitude},${p.latitude}`),url=provider==='yandex'?`https://yandex.ru/maps/?rtext=~${p.latitude},${p.longitude}&rtt=${mode}`:`https://2gis.ru/directions/tab/${mode==='pedestrian'?'pedestrian':'car'}/points/${points}`;closeModal();tg?.openLink?tg.openLink(url,{try_instant_view:false}):window.open(url,'_blank','noopener')}
 function copyAddress(seq){const p=pointBySeq(seq);navigator.clipboard?.writeText(p.address);toast('Адрес скопирован')}
 function scannerScreen(p){show(`${header(`<button class="icon-button" aria-label="Вернуться к маршруту" onclick="routeScreen(${p.seq},false)">${icon('back')}</button>`)}<section class="scanner-screen">${localDistance(p)!=null?`<span class="scan-chip">гео ок · ${fmt(localDistance(p))}</span>`:''}<div class="scanner-hint"><h1>Сканируй QR партнёра</h1><p>Наведи камеру на табличку у стойки «${esc(shortName(p))}». Отметка засчитается сразу.</p></div><div class="scanner-frame" aria-hidden="true"><i></i><i></i><i></i><i></i><span class="grid"></span><span class="beam"></span></div><div class="scanner-safety">Сначала полностью остановись и припаркуй байк</div><button class="btn primary" onclick="openNativeScanner(${p.seq})">${icon('scan')} Открыть камеру</button><button class="btn secondary" onclick="manualCode()">Ввести код вручную</button></section>`)}
 function openNativeScanner(seq){const p=pointBySeq(seq),supported=!!tg?.showScanQrPopup&&(typeof tg.isVersionAtLeast!=='function'||tg.isVersionAtLeast('6.4'));if(!supported)return manualCode();try{qrPopupOpen=true;tg.showScanQrPopup({text:'Наведи камеру на зелёную табличку BBBIKE'},value=>{qrPopupOpen=false;try{tg.closeScanQrPopup()}catch(_){/* popup may already be closed */}submitQr(value);return true})}catch(_){qrPopupOpen=false;manualCode()}}
@@ -1763,6 +1782,7 @@ async function submitQr(value){
     const payload={qr_code:value,request_id:requestId()};
     if(state?.scan_requires_geo&&localPosition){payload.latitude=localPosition.lat;payload.longitude=localPosition.lon}
     state=(await api('/api/quest/scan',{method:'POST',body:JSON.stringify(payload)})).data;
+    cacheState(state);
     closeModal();
     const after=completed(),ev=state.event||{};
     if(after>before)return stampSuccess(ev.point_completed);
@@ -1775,10 +1795,13 @@ async function submitQr(value){
     }
     routeScreen();
   }catch(x){tg?.HapticFeedback?.notificationOccurred?.('error');toast(x.message)}}
-function stampSuccess(seq){const p=pointBySeq(seq),n=completed();show(`${header(`<span class="count-label">${n} ${n===1?'штамп':'штампа'}</span>`)}<section class="stamp-screen"><div class="stamp-seal-wrap"><div class="stamp-seal"><span class="city">КРАСНАЯ ПОЛЯНА</span><span class="name">${esc(shortName(p))}</span><span class="meta">${completedTime(p.completed_at)} · ${state?.scan_requires_geo?'ГЕО + QR':'QR'}</span></div></div><h1>${n===3?'Квест пройден':'Отметка засчитана'}</h1><p class="lead">${n===3?'Все три точки пройдены. Premium будет привязан после проверки.':n===2?'Остался один — и квест закрыт.':`Подарок сохранён. До Premium — ${3-n} отметки.`}</p><div class="reward-warning">Промокод сохранён в квесте. Он откроется только один раз — показывай его сотруднику заведения.</div>${stampRail(seq)}<button class="btn primary stamp-next" onclick="${n===3?'passportScreen()':'selectPoint(openPoints()[0]?.seq)'}">${n===3?'Открыть мой квест':'Выбрать следующий штамп'}</button></section>`);tg?.HapticFeedback?.notificationOccurred('success')}
+function stampSuccess(seq){const p=pointBySeq(seq),n=completed();show(`${header(`<span class="count-label">${n} ${n===1?'штамп':'штампа'}</span>`)}<section class="stamp-screen"><div class="stamp-seal-wrap"><div class="stamp-seal"><span class="city">КРАСНАЯ ПОЛЯНА</span><span class="name">${esc(shortName(p))}</span><span class="meta">${completedTime(p.completed_at)} · ${state?.scan_requires_geo?'ГЕО + QR':'QR'}</span></div></div><h1>${n===3?'Квест пройден':'Отметка засчитана'}</h1><p class="lead">${n===3?'Все три точки пройдены. Premium будет привязан после проверки.':n===2?'Остался один — и квест закрыт.':`Подарок сохранён. До Premium — ${3-n} отметки.`}</p><div class="reward-warning">Промокод сохранён в квесте. Он откроется только один раз — показывай его сотруднику заведения.</div>${stampRail(seq)}<button class="btn primary stamp-next" onclick="${n===3?'passportScreen()':'selectPoint(orderedPoints().find(p=>!p.completed_at)?.seq)'}">${n===3?'Открыть мой квест':'Выбрать следующий штамп'}</button></section>`);tg?.HapticFeedback?.notificationOccurred('success')}
 function showReward(seq){const p=pointBySeq(seq);if(!p)return passportScreen();const used=!!p.reward_used;show(`${header(`<button class="icon-button" aria-label="Вернуться к квесту" onclick="passportScreen()">${icon('back')}</button>`)}<section class="saved-reward"><div class="stamp-seal small"><span>ПОДАРОК ПАРТНЁРА</span><strong>${esc(shortName(p))}</strong><small>${used?'ИСПОЛЬЗОВАН':completedTime(p.completed_at)+' · QR'}</small></div><p class="micro">${used?'ПРОМОКОД ИСПОЛЬЗОВАН':'СОХРАНЕНО В КВЕСТЕ'}</p><h1>${esc(p.reward_title)}</h1><p>${esc(p.reward_text)}</p>${used?'<div class="reward-warning">Этот промокод уже был показан и больше не откроется.</div>':'<div class="reward-warning">Код можно увидеть только один раз. Перед нажатием позови сотрудника заведения.</div><button class="btn primary" onclick="prepareReward('+p.seq+')">Показать сотруднику</button>'}<button class="btn secondary" onclick="passportScreen()">Вернуться к квесту</button></section>`)}
 function prepareReward(seq){const p=pointBySeq(seq);if(!p||p.reward_used)return showReward(seq);presentModal(`<div class="modal" onclick="if(event.target===this)closeModal()"><section class="sheet"><div class="sheet-head"><div><p class="micro">ОДНОРАЗОВЫЙ ПРОМОКОД</p><h2>Сотрудник рядом?</h2></div><button class="icon-button" aria-label="Закрыть" onclick="closeModal()">×</button></div><p class="sheet-copy">После подтверждения код появится только на этом экране и сразу будет отмечен использованным. Повторно открыть его нельзя.</p><button class="btn primary" onclick="redeemReward(${seq})">Да, показать код</button><button class="btn quiet" onclick="closeModal()">Пока не открывать</button></section></div>`)}
-async function redeemReward(seq){const button=modal.querySelector('.btn.primary');if(button)button.disabled=true;try{const result=await api('/api/quest/rewards/'+seq+'/redeem',{method:'POST',body:'{}'});state=result.data;cacheState(state);closeModal();showOneTimeReward(result.reward)}catch(x){if(button)button.disabled=false;toast(x.message);if(x.message.includes('использован')){await refresh({silent:true});showReward(seq)}}}
+function rewardRequestKey(seq){return `bbq-reward-request:${state?.session?.id||'session'}:${seq}`}
+function rewardRequestId(seq){const key=rewardRequestKey(seq);try{const saved=localStorage.getItem(key);if(saved)return saved;const id=requestId();localStorage.setItem(key,id);return id}catch(_){return requestId()}}
+function clearRewardRequest(seq){try{localStorage.removeItem(rewardRequestKey(seq))}catch(_){}}
+async function redeemReward(seq){const button=modal.querySelector('.btn.primary');if(button)button.disabled=true;const id=rewardRequestId(seq);try{const result=await api('/api/quest/rewards/'+seq+'/redeem',{method:'POST',body:JSON.stringify({request_id:id})});state=result.data;cacheState(state);clearRewardRequest(seq);closeModal();showOneTimeReward(result.reward)}catch(x){if(button)button.disabled=false;toast(x.message);if(x.message.includes('использован')){clearRewardRequest(seq);await refresh({silent:true});showReward(seq)}}}
 function showOneTimeReward(reward){show(`${header(`<span class="count-label">ОДИН РАЗ</span>`)}<section class="saved-reward"><div class="stamp-seal small"><span>ПОДТВЕРЖДЕНО</span><strong>${esc(shortName({point_name:reward.point_name}))}</strong><small>ИСПОЛЬЗОВАН</small></div><p class="micro">ПОКАЖИ СОТРУДНИКУ СЕЙЧАС</p><h1>${esc(reward.reward_title)}</h1><div class="one-time-code"><span>ОДНОРАЗОВЫЙ ПРОМОКОД</span><strong>${esc(reward.code)}</strong></div><div class="reward-warning">После ухода с этого экрана код больше не показывается.</div><button class="btn primary" onclick="passportScreen()">Готово</button></section>`);tg?.HapticFeedback?.notificationOccurred?.('success')}
 function copyPremium(){const code=state?.premium?.public_code||'';navigator.clipboard?.writeText(code);toast(code?'Premium скопирован':'Premium ещё оформляется')}
 function sharePassport(){const text='Я собрал все 3 штампа в квесте BBBIKE по Красной Поляне. Присоединяйся!';
@@ -1786,7 +1809,7 @@ function sharePassport(){const text='Я собрал все 3 штампа в к
      и друг попадал на лендинг вместо квеста. */
   const target=botUsername?`https://t.me/${botUsername}?startapp=quest`:location.origin;
   const url=`https://t.me/share/url?url=${encodeURIComponent(target)}&text=${encodeURIComponent(text)}`;tg?.openTelegramLink?tg.openTelegramLink(url):window.open(url,'_blank','noopener')}
-function closeModal(){modal.innerHTML='';modalTrigger?.focus?.();modalTrigger=null;syncBackButton();if(pendingAutoRender){pendingAutoRender=false;render(false)}}
+function closeModal(){modal.innerHTML='';root.inert=false;root.removeAttribute('aria-hidden');document.body.classList.remove('modal-open');modalTrigger?.focus?.();modalTrigger=null;syncBackButton();if(pendingAutoRender){pendingAutoRender=false;render(false)}}
 /* Классы экранов перечислены в одном месте: раньше syncBackButton искал
    .rules и .stamp-success, а разметка отдаёт .rules-screen и .stamp-screen,
    поэтому на этих экранах системная кнопка «назад» пропадала, а аппаратная
@@ -1817,7 +1840,7 @@ function rules(next){rulesShown=true;const r=(state?.points?.[0]?.radius_m)||100
 
   <div class="rules-gift">
     <span class="gift-ic">${icon('gift')}</span>
-    <div><b>Что в конце</b><p>Три отметки открывают Premium BBBIKE на 30 дней. Промокод придёт прямо в приложение.</p></div>
+    <div><b>Что в конце</b><p>После трёх штампов появится код участника. Premium BBBIKE на 30 дней подключится после проверки администратором.</p></div>
   </div>
 
   <div class="rules-geo">
@@ -1850,9 +1873,9 @@ function render(track=true){
   completed()===3?passportScreen():routeScreen(selectedSeq,track)}
 function stateFingerprint(value){return JSON.stringify({campaign:value?.campaign,session:value?.session,points:value?.points,premium:value?.premium})}
 function canAutoRender(){const tag=document.activeElement?.tagName;return !document.hidden&&!modal.innerHTML&&!qrPopupOpen&&!['INPUT','TEXTAREA','SELECT'].includes(tag)&&!root.querySelector('.rules,.rules-screen,.stamp-success,.stamp-screen,.saved-reward,.scanner-screen')}
-async function refresh(options={}){const silent=!!options.silent;if(syncInFlight)return;syncInFlight=true;try{const payload=await api('/api/quest/state');if(lastBuildVersion&&payload.build_version&&payload.build_version!==lastBuildVersion){if(canAutoRender())location.reload();return}if(payload.build_version)lastBuildVersion=payload.build_version;const before=stateFingerprint(state),after=stateFingerprint(payload.data),changed=before!==after;state=payload.data;botUsername=payload.bot_username||'';cacheState(state);if(!silent){pendingAutoRender=false;render(true)}else if(changed||pendingAutoRender){if(canAutoRender()){pendingAutoRender=false;render(false)}else pendingAutoRender=true}}catch(e){if(silent)return;const saved=cachedState();if(saved){state=saved;offlineMode=true;toast('Нет связи — открыт сохранённый квест');return render(false)}emptyState('Не получилось открыть квест',e.message||'Проверь интернет и попробуй ещё раз.')}finally{syncInFlight=false}}
+async function refresh(options={}){const silent=!!options.silent;if(syncInFlight)return;syncInFlight=true;try{const payload=await api('/api/quest/state');if(lastBuildVersion&&payload.build_version&&payload.build_version!==lastBuildVersion){if(canAutoRender())location.reload();return}if(payload.build_version)lastBuildVersion=payload.build_version;const before=stateFingerprint(state),after=stateFingerprint(payload.data),changed=before!==after;state=payload.data;botUsername=payload.bot_username||'';cacheState(state);if(!silent){pendingAutoRender=false;render(true)}else if(changed||pendingAutoRender){if(canAutoRender()){pendingAutoRender=false;render(false)}else pendingAutoRender=true}}catch(e){if(silent)return;const saved=cachedState();if(saved){state=saved;setOffline(true);toast('Нет связи — открыт сохранённый квест');return render(false)}emptyState('Не получилось открыть квест',e.message||'Проверь интернет и попробуй ещё раз.')}finally{syncInFlight=false}}
 async function publicLanding(){try{const payload=await fetch('/api/public/info',{cache:'no-store'}).then(r=>r.json());const app=payload.app_url||payload.chat_url,chat=payload.chat_url||app;show(`<section class="passport-cover public-cover"><div class="cover-grain"></div><div class="cover-brand"><img src="/static/bb-bike-logo.jpg" alt="BBBIKE"><span>КВЕСТ · КРАСНАЯ ПОЛЯНА</span></div><div class="cover-copy"><p class="micro">КВЕСТ КРАСНОЙ ПОЛЯНЫ</p><h1>Пройди городской квест</h1><p>Три места, три подарка и Premium BBBIKE на 30 дней. Прогресс хранится внутри Telegram.</p></div><a class="btn cover-button public-link" href="${esc(app)}">Открыть приложение</a><a class="btn quiet public-link" href="${esc(chat)}">Перейти в чат с ботом</a></section>`)}catch(_){emptyState('Открой квест в Telegram','Эта страница работает внутри личного чата с ботом.')}}
-window.addEventListener('offline',()=>toast('Нет сети. Прогресс квеста сохранён.'));
+window.addEventListener('offline',()=>{setOffline(true);toast('Нет сети. Прогресс квеста сохранён.')});
 window.addEventListener('online',()=>refresh({silent:true}));
 window.addEventListener('pageshow',()=>initData&&refresh({silent:true}));
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&initData)refresh({silent:true})});
@@ -1878,7 +1901,7 @@ function boot(){
   const insideTelegram=/tgWebApp/i.test(location.hash+location.search)||!!window.TelegramWebviewProxy;
   if(insideTelegram||window.__tgSdkFailed){
     const saved=cachedState();
-    if(saved){state=saved;offlineMode=true;render(false);return toast('Telegram не отвечает — открыт сохранённый квест')}
+    if(saved){state=saved;setOffline(true);render(false);return toast('Telegram не отвечает — открыт сохранённый квест')}
     return emptyState('Telegram не отвечает','Не удалось загрузить связь с Telegram. Проверь интернет и открой квест заново.','location.reload()');
   }
   publicLanding();

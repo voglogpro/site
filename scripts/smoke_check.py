@@ -49,12 +49,15 @@ async def production_reward_scenario() -> None:
             state = await service.scan(identity, codes[0], "production-scan")
             reward = state["points"][0]
             assert "reward_code" not in reward and reward["reward_available"] and not reward["reward_used"]
-            issued = await service.redeem_reward(identity, 1)
+            redeem_id = "reward-smoke-request-0001"
+            issued = await service.redeem_reward(identity, 1, redeem_id)
             assert issued["reward"]["code"].startswith("BB-")
             used = issued["data"]["points"][0]
             assert "reward_code" not in used and used["reward_used"] and not used["reward_available"]
+            recovered = await service.redeem_reward(identity, 1, redeem_id)
+            assert recovered["reward"]["code"] == issued["reward"]["code"]
             try:
-                await service.redeem_reward(identity, 1)
+                await service.redeem_reward(identity, 1, "reward-smoke-request-0002")
             except production.QuestError as exc:
                 assert exc.code == "reward_used"
             else:
@@ -138,6 +141,8 @@ async def main() -> None:
     webapp = (Path(__file__).resolve().parent.parent / "index.html").read_text(encoding="utf-8")
     assert "function useMapgl(){return isIOSDevice()&&!!mapglKey()&&!!window.mapgl}" in webapp
     assert "const proxy=`/tiles/${styleKey}/{z}/{x}/{y}.png`" in webapp
+    assert "2gis.ru/directions/tab/" in webapp and "2gis.ru/routeSearch/rsType" not in webapp
+    assert "reward_redeem_request_id" in production.SCHEMA
     assert "glMap.setStyleById(next)" in webapp and "id=\"map-theme-toggle\"" in webapp
     assert "coverMapPreview" not in webapp and 'class="cover-map"' not in webapp
     assert ".map-tone-dark canvas" not in webapp
