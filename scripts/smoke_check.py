@@ -32,10 +32,6 @@ async def production_reward_scenario() -> None:
             assert overview["map"]["mapgl_styles"] == {
                 "light": settings.mapgl_style_light, "dark": settings.mapgl_style_dark,
             }
-            assert overview["map"]["tile_style_keys"] == {
-                "light": production.tile_style_tag("light", settings.tile_palette_name),
-                "dark": production.tile_style_tag("dark", settings.tile_palette_name),
-            }
             codes = []
             for point in overview["points"]:
                 await service.admin_update_point(0, point["id"], {
@@ -68,11 +64,37 @@ async def production_reward_scenario() -> None:
             assert completed_state["session"]["status"] == "completed"
             assert completed_state["premium"]["requested_at"] is None
             premium_id = "premium-smoke-request-0001"
-            requested = await service.request_premium(identity, premium_id)
+            requested = await service.request_premium(identity, premium_id, "+7 (999) 123-45-67")
             assert requested["data"]["premium"]["requested_at"]
+            assert requested["data"]["premium"]["phone"] == "+79991234567"
             assert requested["notification_claim"] == ""
-            repeated_request = await service.request_premium(identity, premium_id)
+            repeated_request = await service.request_premium(identity, premium_id, "+7 (999) 123-45-67")
             assert repeated_request["data"]["premium"]["requested_at"] == requested["data"]["premium"]["requested_at"]
+            conversations = await service.admin_support_conversations()
+            assert len(conversations) == 1
+            conversation = conversations[0]
+            assert conversation["participant_code"].startswith("KP-")
+            assert conversation["phone"] == "+79991234567"
+            assert (await db.fetchone(
+                "SELECT COUNT(*) count FROM support_messages WHERE kind='premium_request'"
+            ))["count"] == 1
+            await service.activate_support(identity)
+            assert await service.receive_support_message(identity, "Не вижу подписку", 501)
+            assert await service.receive_support_message(identity, "Не вижу подписку", 501)
+            assert (await db.fetchone(
+                "SELECT COUNT(*) count FROM support_messages WHERE source_key=?",
+                (f"tg:{identity.user_id}:501",),
+            ))["count"] == 1
+            conversations = await service.admin_support_conversations()
+            assert conversations[0]["unread_count"] == 1
+            detail = await service.admin_support_detail(conversation["id"])
+            assert detail["conversation"]["participant_code"].startswith("KP-")
+            target = await service.support_reply_target(conversation["id"])
+            assert target["user_id"] == identity.user_id
+            replied = await service.record_support_reply(conversation["id"], 0, "Заявка принята", 777)
+            assert replied["messages"][-1]["direction"] == "operator"
+            closed = await service.set_support_status(conversation["id"], "closed")
+            assert closed["conversation"]["status"] == "closed"
             overview = await service.admin_overview()
             assert overview["funnel"]["premium_pending"] == 1
             row = next(p for p in overview["recent"] if p["id"] == completed_state["session"]["id"])
@@ -164,7 +186,7 @@ async def main() -> None:
     assert hashlib.sha256(leaflet.rstrip(b"\n")).hexdigest() == "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a"
     webapp = (Path(__file__).resolve().parent.parent / "index.html").read_text(encoding="utf-8")
     assert "function useMapgl(){return !!mapglKey()&&!!window.mapgl&&!window.__mapglFailed}" in webapp
-    assert "const proxy=`/tiles/${styleKey}/{z}/{x}/{y}.png`" in webapp
+    assert "function initGlMap(" in webapp and "new mapgl.Map(node,opts)" in webapp
     assert "2gis.ru/directions/tab/" in webapp and "2gis.ru/routeSearch/rsType" not in webapp
     assert "reward_redeem_request_id" in production.SCHEMA
     assert all(name in production.SCHEMA for name in ("requested_at", "support_notified_at", "support_notification_claim"))
@@ -177,7 +199,7 @@ async def main() -> None:
     assert "if(compatAttempt>0){opts.webglVersion=1" in webapp
     assert "graphicsPreset:android?'light':'normal'" in webapp and "instance.on?.('idle'" in webapp
     assert "invalidtilekey|styleloaderror|webglcontextlost|context lost" in webapp
-    assert "routeLayer=null;routeSeq=null;renderRouteInfo(null)" in webapp
+    assert "function clearRoute()" in webapp and "routeRequestToken++" in webapp
     assert '.map-chip{width:44px;height:44px' in webapp
     assert production.DEFAULT_MAPGL_LIGHT_STYLE == "c080bb6a-8134-4993-93a1-5b4d8c36a59b"
     assert production.DEFAULT_MAPGL_DARK_STYLE == "9643e8da-173b-4359-9fee-8a1fe58e68aa"
@@ -189,5 +211,5 @@ async def main() -> None:
     assert validate_admin_ticket(ticket, settings, now=1_000 + settings.admin_ticket_ttl_sec + 1) is None
     for order in itertools.permutations(range(3)): await scenario(order)
     await production_reward_scenario()
-    print("PASS: persistence, maps, 6 point orders, QR idempotency, password session, one-time rewards and Premium workflow")
+    print("PASS: persistence, maps, 6 point orders, QR idempotency, password session, one-time rewards, Premium and CRM support")
 if __name__ == "__main__": asyncio.run(main())

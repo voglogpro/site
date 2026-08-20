@@ -219,10 +219,9 @@ def load_settings() -> Settings:
         session_duration_min=int(os.getenv("SESSION_DURATION_MIN", "240")),
         location_stale_sec=int(os.getenv("LOCATION_STALE_SEC", "300")),
         location_retention_days=int(os.getenv("LOCATION_RETENTION_DAYS", "7")),
-        support_url=os.getenv("SUPPORT_URL", "https://t.me/bbbike_support"),
-        # Username (@bbbike_support), numeric chat id or channel id where a
-        # completed quest should create an operator request. When it is not
-        # configured, the participant gets a pre-filled support deep link.
+        support_url=os.getenv("SUPPORT_URL", "https://t.me/bbbike_support_bot"),
+        # Optional duplicate notification. The durable operator request is
+        # always created in CRM; this target is only a convenience copy.
         support_chat_id=os.getenv("SUPPORT_CHAT_ID", "").strip(),
         map_tile_url=os.getenv("MAP_TILE_URL", "https://tile.openstreetmap.org/{z}/{x}/{y}.png"),
         # Подпись на карте. Указание OpenStreetMap обязательно по лицензии
@@ -406,6 +405,38 @@ CREATE TABLE IF NOT EXISTS premium_entitlements (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS support_conversations (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL UNIQUE REFERENCES participants(user_id) ON DELETE CASCADE,
+    session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+    participant_code TEXT NOT NULL DEFAULT '',
+    phone TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','closed')),
+    mode_active INTEGER NOT NULL DEFAULT 0 CHECK(mode_active IN (0,1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    closed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS support_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id TEXT NOT NULL REFERENCES support_conversations(id) ON DELETE CASCADE,
+    direction TEXT NOT NULL CHECK(direction IN ('user','operator','system')),
+    kind TEXT NOT NULL DEFAULT 'message' CHECK(kind IN ('message','premium_request')),
+    text TEXT NOT NULL,
+    source_key TEXT UNIQUE,
+    telegram_message_id INTEGER,
+    admin_id INTEGER,
+    created_at TEXT NOT NULL,
+    read_at TEXT
+);
+CREATE INDEX IF NOT EXISTS support_conversations_status_time
+    ON support_conversations(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS support_messages_conversation_time
+    ON support_messages(conversation_id, id);
+CREATE INDEX IF NOT EXISTS support_messages_unread
+    ON support_messages(conversation_id, direction, read_at);
+
 CREATE TABLE IF NOT EXISTS admin_audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     admin_id INTEGER NOT NULL,
@@ -587,6 +618,20 @@ class TelegramIdentity:
     def display_name(self) -> str:
         value = " ".join(part for part in (self.first_name, self.last_name) if part).strip()
         return value or self.username or f"Участник {self.user_id}"
+
+
+def identity_from_message(message: Message) -> TelegramIdentity:
+    """Build the same participant identity for bot and Mini App traffic."""
+    user = message.from_user
+    if not user:
+        raise QuestError("telegram_user_required", "Не удалось определить участника.", 400)
+    return TelegramIdentity(
+        user_id=user.id,
+        username=(user.username or "")[:64],
+        first_name=(user.first_name or "")[:128],
+        last_name=(user.last_name or "")[:128],
+        language_code=(user.language_code or "")[:16],
+    )
 
 
 def validate_init_data(raw: str, settings: Settings) -> TelegramIdentity | None:
@@ -1187,7 +1232,7 @@ class QuestService:
         entitlement = None
         if session:
             entitlement = await (await db.execute(
-                """SELECT public_code,status,requested_at,support_notified_at,issued_at,
+                """SELECT public_code,status,requested_at,support_notified_at,issued_at,phone,
                           (support_notification_claim IS NOT NULL) support_notification_pending
                    FROM premium_entitlements WHERE session_id=?""",
                 (session["id"],),
@@ -1467,9 +1512,48 @@ class QuestService:
                     },
                 }
 
+    async def _support_conversation_in_tx(
+        self, db, user_id: int, *, session_id: str | None = None,
+        participant_code: str = "", phone: str = "", activate: bool = False,
+    ) -> str:
+        """Create or refresh the participant's single support thread."""
+        now = iso()
+        existing = await (await db.execute(
+            "SELECT id FROM support_conversations WHERE user_id=?", (user_id,)
+        )).fetchone()
+        if existing:
+            await db.execute(
+                """UPDATE support_conversations
+                   SET session_id=COALESCE(?,session_id),
+                       participant_code=CASE WHEN ?<>'' THEN ? ELSE participant_code END,
+                       phone=CASE WHEN ?<>'' THEN ? ELSE phone END,
+                       status='open',mode_active=CASE WHEN ? THEN 1 ELSE mode_active END,
+                       updated_at=?,closed_at=NULL
+                   WHERE id=?""",
+                (
+                    session_id, participant_code, participant_code, phone, phone,
+                    1 if activate else 0, now, existing["id"],
+                ),
+            )
+            return str(existing["id"])
+        conversation_id = str(uuid.uuid4())
+        await db.execute(
+            """INSERT INTO support_conversations(
+                   id,user_id,session_id,participant_code,phone,status,mode_active,created_at,updated_at
+               ) VALUES(?,?,?,?,?,'open',?,?,?)""",
+            (
+                conversation_id, user_id, session_id, participant_code, phone,
+                1 if activate else 0, now, now,
+            ),
+        )
+        return conversation_id
+
     async def request_premium(self, identity: TelegramIdentity, request_id: str, phone: str = "") -> dict:
         """Create one explicit and retry-safe Premium request after completion."""
         request_id = (request_id or "").strip()
+        phone = normalize_phone(phone)
+        if not phone:
+            raise QuestError("bad_phone", "Проверь номер телефона — он нужен, чтобы подключить подписку.", 400)
         if not (16 <= len(request_id) <= 100) or not re.fullmatch(r"[A-Za-z0-9._:-]+", request_id):
             raise QuestError("bad_request_id", "Не удалось безопасно отправить заявку. Попробуй ещё раз.", 400)
         async with self.lock_for(identity.user_id):
@@ -1500,6 +1584,30 @@ class QuestService:
                     except aiosqlite.IntegrityError:
                         raise QuestError("duplicate_request", "Эта заявка уже обработана. Обнови экран.", 409)
 
+                # CRM is the source of truth for support. The deterministic
+                # source_key makes browser retries safe and never duplicates
+                # the completed-quest request.
+                conversation_id = await self._support_conversation_in_tx(
+                    db,
+                    row["user_id"],
+                    session_id=row["session_id"],
+                    participant_code=row["public_code"],
+                    phone=phone or (row["phone"] if "phone" in row.keys() else "") or "",
+                )
+                await db.execute(
+                    """INSERT OR IGNORE INTO support_messages(
+                           conversation_id,direction,kind,text,source_key,created_at
+                       ) VALUES(?,'system','premium_request',?,?,?)""",
+                    (
+                        conversation_id,
+                        "Заявка на Premium 30 дней. "
+                        f"ID участника: {row['public_code']}. Телефон: "
+                        f"{phone or (row['phone'] if 'phone' in row.keys() else '') or 'не указан'}.",
+                        f"premium:{row['session_id']}",
+                        requested_at,
+                    ),
+                )
+
                 claim = ""
                 if self.settings.support_chat_id and row["status"] == "pending" and not row["support_notified_at"]:
                     stale_before = iso(utcnow() - timedelta(minutes=5))
@@ -1527,6 +1635,161 @@ class QuestService:
                         "phone": phone or (row["phone"] if "phone" in row.keys() else "") or "",
                     },
                 }
+
+    async def activate_support(self, identity: TelegramIdentity) -> dict:
+        """Open the CRM thread and remember that free text belongs to support."""
+        await self.upsert_participant(identity)
+        async with self.lock_for(identity.user_id):
+            async with self.db.transaction() as db:
+                latest = await (await db.execute(
+                    """SELECT s.id,e.public_code,e.phone
+                       FROM sessions s
+                       LEFT JOIN premium_entitlements e ON e.session_id=s.id
+                       WHERE s.user_id=? ORDER BY s.started_at DESC LIMIT 1""",
+                    (identity.user_id,),
+                )).fetchone()
+                conversation_id = await self._support_conversation_in_tx(
+                    db,
+                    identity.user_id,
+                    session_id=latest["id"] if latest else None,
+                    participant_code=(latest["public_code"] if latest else "") or "",
+                    phone=(latest["phone"] if latest else "") or "",
+                    activate=True,
+                )
+                return {"conversation_id": conversation_id}
+
+    async def deactivate_support(self, user_id: int) -> bool:
+        async with self.db.transaction() as db:
+            cursor = await db.execute(
+                "UPDATE support_conversations SET mode_active=0,updated_at=? WHERE user_id=?",
+                (iso(), user_id),
+            )
+            return cursor.rowcount > 0
+
+    async def receive_support_message(
+        self, identity: TelegramIdentity, text: str, telegram_message_id: int | None = None,
+    ) -> bool:
+        """Store a participant message only while support mode is active."""
+        clean = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", (text or "").strip())[:3000]
+        if not clean:
+            return False
+        await self.upsert_participant(identity)
+        async with self.lock_for(identity.user_id):
+            async with self.db.transaction() as db:
+                conversation = await (await db.execute(
+                    "SELECT id,mode_active FROM support_conversations WHERE user_id=?",
+                    (identity.user_id,),
+                )).fetchone()
+                if not conversation or not conversation["mode_active"]:
+                    return False
+                source_key = (
+                    f"tg:{identity.user_id}:{telegram_message_id}"
+                    if telegram_message_id is not None else f"tg:{identity.user_id}:{uuid.uuid4().hex}"
+                )
+                await db.execute(
+                    """INSERT OR IGNORE INTO support_messages(
+                           conversation_id,direction,kind,text,source_key,telegram_message_id,created_at
+                       ) VALUES(?,'user','message',?,?,?,?)""",
+                    (conversation["id"], clean, source_key, telegram_message_id, iso()),
+                )
+                await db.execute(
+                    """UPDATE support_conversations
+                       SET status='open',updated_at=?,closed_at=NULL WHERE id=?""",
+                    (iso(), conversation["id"]),
+                )
+                return True
+
+    async def admin_support_conversations(self) -> list[dict]:
+        rows = await self.db.fetchall(
+            """SELECT c.id,c.user_id,c.session_id,c.participant_code,c.phone,c.status,
+                      c.created_at,c.updated_at,c.closed_at,p.display_name,p.username,
+                      (SELECT COUNT(*) FROM support_messages m
+                       WHERE m.conversation_id=c.id AND m.direction='user' AND m.read_at IS NULL) unread_count,
+                      (SELECT text FROM support_messages m
+                       WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) last_message,
+                      (SELECT direction FROM support_messages m
+                       WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) last_direction
+               FROM support_conversations c
+               JOIN participants p ON p.user_id=c.user_id
+               ORDER BY unread_count DESC,c.updated_at DESC LIMIT 500"""
+        )
+        return [row_dict(row) for row in rows]
+
+    async def admin_support_detail(self, conversation_id: str) -> dict:
+        async with self.db.transaction() as db:
+            conversation = await (await db.execute(
+                """SELECT c.*,p.display_name,p.username
+                   FROM support_conversations c JOIN participants p ON p.user_id=c.user_id
+                   WHERE c.id=?""",
+                (conversation_id,),
+            )).fetchone()
+            if not conversation:
+                raise QuestError("support_not_found", "Обращение не найдено.", 404)
+            await db.execute(
+                """UPDATE support_messages SET read_at=COALESCE(read_at,?)
+                   WHERE conversation_id=? AND direction='user'""",
+                (iso(), conversation_id),
+            )
+            messages = await (await db.execute(
+                """SELECT id,direction,kind,text,created_at,read_at
+                   FROM support_messages WHERE conversation_id=? ORDER BY id""",
+                (conversation_id,),
+            )).fetchall()
+            return {
+                "conversation": row_dict(conversation),
+                "messages": [row_dict(message) for message in messages],
+            }
+
+    async def support_reply_target(self, conversation_id: str) -> dict:
+        row = await self.db.fetchone(
+            """SELECT c.id,c.user_id,c.participant_code,c.phone,p.display_name
+               FROM support_conversations c JOIN participants p ON p.user_id=c.user_id
+               WHERE c.id=?""",
+            (conversation_id,),
+        )
+        if not row:
+            raise QuestError("support_not_found", "Обращение не найдено.", 404)
+        return row_dict(row)
+
+    async def record_support_reply(
+        self, conversation_id: str, admin_id: int, text: str, telegram_message_id: int | None = None,
+    ) -> dict:
+        clean = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", (text or "").strip())[:3000]
+        if not clean:
+            raise QuestError("empty_support_reply", "Напиши ответ участнику.", 400)
+        async with self.db.transaction() as db:
+            exists = await (await db.execute(
+                "SELECT id FROM support_conversations WHERE id=?", (conversation_id,)
+            )).fetchone()
+            if not exists:
+                raise QuestError("support_not_found", "Обращение не найдено.", 404)
+            await db.execute(
+                """INSERT INTO support_messages(
+                       conversation_id,direction,kind,text,telegram_message_id,admin_id,created_at,read_at
+                   ) VALUES(?,'operator','message',?,?,?,?,?)""",
+                (conversation_id, clean, telegram_message_id, admin_id, iso(), iso()),
+            )
+            await db.execute(
+                """UPDATE support_conversations
+                   SET status='open',updated_at=?,closed_at=NULL WHERE id=?""",
+                (iso(), conversation_id),
+            )
+        return await self.admin_support_detail(conversation_id)
+
+    async def set_support_status(self, conversation_id: str, status: str) -> dict:
+        if status not in {"open", "closed"}:
+            raise QuestError("bad_support_status", "Некорректный статус обращения.", 400)
+        async with self.db.transaction() as db:
+            cursor = await db.execute(
+                """UPDATE support_conversations
+                   SET status=?,mode_active=CASE WHEN ?='closed' THEN 0 ELSE mode_active END,
+                       closed_at=CASE WHEN ?='closed' THEN ? ELSE NULL END,updated_at=?
+                   WHERE id=?""",
+                (status, status, status, iso(), iso(), conversation_id),
+            )
+            if cursor.rowcount != 1:
+                raise QuestError("support_not_found", "Обращение не найдено.", 404)
+        return await self.admin_support_detail(conversation_id)
 
     async def finish_premium_notification(self, session_id: str, claim: str, success: bool) -> None:
         """Finish a claimed support delivery without duplicating messages."""
@@ -1578,12 +1841,19 @@ class QuestService:
         ))
         funnel.update(reward_metrics or {})
         funnel.update(premium_metrics or {})
+        support_metrics = row_dict(await self.db.fetchone(
+            """SELECT COUNT(*) total,
+                      COALESCE(SUM(status='open'),0) open,
+                      COALESCE((SELECT COUNT(*) FROM support_messages
+                                WHERE direction='user' AND read_at IS NULL),0) unread
+               FROM support_conversations"""
+        ))
         recent = [row_dict(r) for r in await self.db.fetchall(
             """SELECT s.id,s.status,s.current_seq,s.started_at,s.completed_at,s.integrity_status,
                (SELECT COUNT(*) FROM session_points sp WHERE sp.session_id=s.id AND sp.completed_at IS NOT NULL) completed_points,
                p.user_id,p.display_name,p.username,e.status premium_status,e.public_code premium_code,
                e.requested_at premium_requested_at,e.support_notified_at premium_support_notified_at,
-               e.issued_at premium_issued_at
+               e.issued_at premium_issued_at,e.phone premium_phone
                FROM sessions s JOIN participants p ON p.user_id=s.user_id
                LEFT JOIN premium_entitlements e ON e.session_id=s.id
                ORDER BY s.started_at DESC LIMIT 500"""
@@ -1596,7 +1866,7 @@ class QuestService:
                e.status premium_status,e.public_code premium_code,
                e.requested_at premium_requested_at,
                e.support_notified_at premium_support_notified_at,
-               e.issued_at premium_issued_at
+               e.issued_at premium_issued_at,e.phone premium_phone
                FROM premium_entitlements e
                JOIN sessions s ON s.id=e.session_id
                JOIN participants p ON p.user_id=s.user_id
@@ -1608,9 +1878,11 @@ class QuestService:
                       p.seq,p.name point_name
                FROM point_qr_codes q JOIN points p ON p.id=q.point_id ORDER BY p.seq,q.id"""
         )]
+        support_conversations = await self.admin_support_conversations()
         return {
             "campaign": campaign, "points": points, "metrics": metrics, "funnel": funnel,
             "recent": recent, "premium_requests": premium_requests, "qr_codes": qr_codes,
+            "support_metrics": support_metrics, "support_conversations": support_conversations,
             "map": {"attribution": self.settings.map_attribution, "mapgl_key": mapgl_key_for(self.settings), "mapgl_style": self.settings.mapgl_style, "mapgl_styles": {"light": self.settings.mapgl_style_light, "dark": self.settings.mapgl_style_dark}},
             "map_bounds": {"south": self.POLYANA_BOUNDS[0][0], "west": self.POLYANA_BOUNDS[0][1], "north": self.POLYANA_BOUNDS[1][0], "east": self.POLYANA_BOUNDS[1][1]},
         }
@@ -1970,7 +2242,7 @@ class QuestService:
     async def export_rows(self):
         return await self.db.fetchall(
             """SELECT p.user_id,p.username,p.display_name,s.started_at,s.completed_at,
-                      e.requested_at,e.public_code,e.status,e.issued_at
+                      e.requested_at,e.public_code,e.phone,e.status,e.issued_at
                FROM premium_entitlements e JOIN sessions s ON s.id=e.session_id JOIN participants p ON p.user_id=s.user_id
                ORDER BY s.completed_at DESC"""
         )
@@ -2015,6 +2287,7 @@ async def setup_bot_commands(bot: Bot, settings: Settings) -> None:
     await bot.set_my_commands([
         BotCommand(command="start", description="Открыть квест"),
         BotCommand(command="progress", description="Мой прогресс"),
+        BotCommand(command="support", description="Написать в поддержку"),
         BotCommand(command="help", description="Помощь"),
         BotCommand(command="admin", description="Панель управления"),
         BotCommand(command="participant", description="Статус участника (админ)"),
@@ -2040,6 +2313,15 @@ def build_router(service: QuestService, settings: Settings) -> Router:
         # Человек пришёл по ссылке с таблички партнёра. Он мог вообще не знать
         # про квест, поэтому сначала коротко объясняем, что это и что он получит.
         payload = (command.args or "").strip()
+        if payload == "support":
+            await service.activate_support(identity_from_message(message))
+            await message.answer(
+                "<b>Поддержка BBBIKE</b>\n\n"
+                "Напиши одним или несколькими сообщениями, что случилось. "
+                "Оператор увидит обращение в CRM и ответит прямо сюда.\n\n"
+                "Чтобы закончить диалог, отправь /cancel."
+            )
+            return
         if payload.startswith("bbq-"):
             await message.answer(
                 "<b>Ты нашёл точку квеста BBBIKE</b> 💚\n\n"
@@ -2076,7 +2358,29 @@ def build_router(service: QuestService, settings: Settings) -> Router:
     async def help_message(message: Message):
         await message.answer(
             "Открой приложение, выбери любую непройденную точку и построй маршрут. Для сортировки по расстоянию можно один раз разрешить геопозицию — она не отправляется боту.\n\n"
-            f"Поддержка: {settings.support_url}"
+            "Поддержка: отправь команду /support — оператор ответит в этом чате."
+        )
+
+    @router.message(Command("support"))
+    async def support(message: Message):
+        if not message.from_user or message.chat.type != "private":
+            return
+        await service.activate_support(identity_from_message(message))
+        await message.answer(
+            "<b>Поддержка BBBIKE</b>\n\n"
+            "Напиши сообщение — оно сразу появится у оператора в CRM. "
+            "Ответ придёт в этот чат.\n\n"
+            "Чтобы закончить диалог, отправь /cancel."
+        )
+
+    @router.message(Command("cancel"))
+    async def cancel_support(message: Message):
+        if not message.from_user or message.chat.type != "private":
+            return
+        stopped = await service.deactivate_support(message.from_user.id)
+        await message.answer(
+            "Диалог с поддержкой завершён. Открыть его снова можно командой /support."
+            if stopped else "Сейчас нет активного диалога с поддержкой."
         )
 
     @router.message(Command("admin"))
@@ -2246,6 +2550,19 @@ def build_router(service: QuestService, settings: Settings) -> Router:
             f"Premium: {item['premium_status'] or 'не назначен'}"
         )
 
+    @router.message(F.text, F.chat.type == "private")
+    async def support_text(message: Message):
+        if not message.from_user or not message.text or message.text.startswith("/"):
+            return
+        stored = await service.receive_support_message(
+            identity_from_message(message), message.text, message.message_id
+        )
+        if stored:
+            await message.answer(
+                "Сообщение отправлено оператору BBBIKE ✅\n"
+                "Можно дописать детали следующим сообщением или завершить диалог командой /cancel."
+            )
+
     return router
 
 # ========================================================================
@@ -2401,6 +2718,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
             "bot_username": username,
             "chat_url": f"https://t.me/{username}?start=quest" if username else "",
             "app_url": f"https://t.me/{username}?startapp=quest&mode=fullscreen" if username else "",
+            "support_url": f"https://t.me/{username}?start=support" if username else settings.support_url,
         })
 
     async def privacy(_):
@@ -2705,7 +3023,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         session_id = result.pop("session_id")
         draft = (
             "Здравствуйте! Я завершил квест BBBIKE в Красной Поляне и хочу получить "
-            f"Premium на 30 дней. Код участника: {participant['public_code']}. "
+            f"Premium на 30 дней. ID участника: {participant['public_code']}. "
             f"Телефон для подписки: {participant.get('phone') or 'не указан'}."
         )
         notified = bool(result["data"].get("premium", {}).get("support_notified_at"))
@@ -2718,7 +3036,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
                 "<b>Новая заявка BBBIKE Premium</b>\n\n"
                 f"Участник: {html.escape(participant['display_name'])}\n"
                 f"Telegram: {html.escape(username)} · <code>{participant['user_id']}</code>\n"
-                f"Код: <code>{html.escape(participant['public_code'])}</code>\n"
+                f"ID участника: <code>{html.escape(participant['public_code'])}</code>\n"
                 f"Телефон: <code>{html.escape(participant.get('phone') or 'не указан')}</code>\n"
                 f"Завершение подтверждено · заявка {html.escape(participant['requested_at'])}"
             )
@@ -2741,6 +3059,51 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
     async def admin_overview(request):
         require_admin(request, settings)
         return json_response({"data": await service.admin_overview()})
+
+    async def admin_support_detail(request):
+        require_admin(request, settings)
+        return json_response({
+            "data": await service.admin_support_detail(request.match_info["conversation_id"])
+        })
+
+    async def admin_support_reply(request):
+        admin = require_admin(request, settings)
+        body = await json_body(request, max_keys=2)
+        reply = re.sub(
+            r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", str(body.get("text") or "").strip()
+        )[:3000]
+        if not reply:
+            raise QuestError("empty_support_reply", "Напиши ответ участнику.", 400)
+        conversation_id = request.match_info["conversation_id"]
+        target = await service.support_reply_target(conversation_id)
+        try:
+            sent = await bot.send_message(
+                target["user_id"],
+                "<b>Ответ поддержки BBBIKE</b>\n\n" + html.escape(reply),
+            )
+        except Exception as exc:
+            log.warning(
+                "Не удалось ответить в поддержку conversation=%s: %s",
+                conversation_id, type(exc).__name__,
+            )
+            raise QuestError(
+                "support_delivery_failed",
+                "Telegram не принял сообщение. Участник мог заблокировать бота — попробуй позже.",
+                502,
+            )
+        detail = await service.record_support_reply(
+            conversation_id, admin.user_id, reply, getattr(sent, "message_id", None)
+        )
+        return json_response({"data": detail})
+
+    async def admin_support_status(request):
+        require_admin(request, settings)
+        body = await json_body(request, max_keys=2)
+        return json_response({
+            "data": await service.set_support_status(
+                request.match_info["conversation_id"], str(body.get("status") or "")
+            )
+        })
 
     async def admin_campaign(request):
         admin = require_admin(request, settings)
@@ -2884,7 +3247,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         writer = csv.writer(output, delimiter=";")
         writer.writerow([
             "Telegram ID", "Username", "Имя", "Старт", "Завершение",
-            "Заявка Premium", "Код", "Статус", "Выдано",
+            "Заявка Premium", "ID участника", "Телефон", "Статус", "Выдано",
         ])
         for row in rows:
             writer.writerow([_csv_safe(row[key]) for key in row.keys()])
@@ -2914,6 +3277,9 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
     app.router.add_post("/api/admin/login", admin_login)
     app.router.add_post("/api/admin/logout", admin_logout)
     app.router.add_get("/api/admin/overview", admin_overview)
+    app.router.add_get("/api/admin/support/{conversation_id}", admin_support_detail)
+    app.router.add_post("/api/admin/support/{conversation_id}/reply", admin_support_reply)
+    app.router.add_post("/api/admin/support/{conversation_id}/status", admin_support_status)
     app.router.add_post("/api/admin/campaign", admin_campaign)
     app.router.add_post("/api/admin/points/{point_id}", admin_point)
     app.router.add_post("/api/admin/points/{point_id}/rotate-qr", admin_rotate_qr)
