@@ -31,6 +31,10 @@ async def production_reward_scenario() -> None:
             assert overview["map"]["mapgl_styles"] == {
                 "light": settings.mapgl_style_light, "dark": settings.mapgl_style_dark,
             }
+            assert overview["map"]["tile_style_keys"] == {
+                "light": production.tile_style_tag("light", settings.tile_palette_name),
+                "dark": production.tile_style_tag("dark", settings.tile_palette_name),
+            }
             codes = []
             for point in overview["points"]:
                 await service.admin_update_point(0, point["id"], {
@@ -132,7 +136,8 @@ async def main() -> None:
     leaflet = (Path(__file__).resolve().parent.parent / "static" / "vendor" / "leaflet-1.9.4.asset").read_bytes()
     assert hashlib.sha256(leaflet.rstrip(b"\n")).hexdigest() == "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a"
     webapp = (Path(__file__).resolve().parent.parent / "index.html").read_text(encoding="utf-8")
-    assert "function useMapgl(){return !!mapglKey()&&!!window.mapgl}" in webapp
+    assert "function useMapgl(){return isIOSDevice()&&!!mapglKey()&&!!window.mapgl}" in webapp
+    assert "const proxy=`/tiles/${styleKey}/{z}/{x}/{y}.png`" in webapp
     assert "glMap.setStyleById(next)" in webapp and "id=\"map-theme-toggle\"" in webapp
     assert "coverMapPreview" not in webapp and 'class="cover-map"' not in webapp
     assert ".map-tone-dark canvas" not in webapp

@@ -918,7 +918,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 <div id="modal"></div><div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 <script>
 const tg=window.Telegram?.WebApp,initData=tg?.initData||'',root=document.getElementById('app'),modal=document.getElementById('modal');
-let state=null,botUsername='',localPosition=null,pointOrder=[],selectedSeq=null,modalTrigger=null,questMap=null;
+let state=null,botUsername='',localPosition=null,pointOrder=[],selectedSeq=null,modalTrigger=null,questMap=null,rasterBaseLayer=null;
 let qrPopupOpen=false,syncInFlight=false,lastBuildVersion='',pendingAutoRender=false;
 const dev=location.hostname==='127.0.0.1'||location.hostname==='localhost';
 const MAP_THEME_KEY='bbq-map-theme-v1';
@@ -952,7 +952,7 @@ function cacheState(value){try{localStorage.setItem(CACHE_KEY,JSON.stringify({at
 function cachedState(){try{const raw=localStorage.getItem(CACHE_KEY);if(!raw)return null;const parsed=JSON.parse(raw);return parsed?.data||null}catch(_){return null}}
 function eventLog(event_type,point_id=null,navigator=''){api('/api/quest/event',{method:'POST',keepalive:true,body:JSON.stringify({event_type,point_id,navigator,request_id:requestId()})}).catch(()=>{})}
 function toast(text){const n=document.getElementById('toast');n.textContent=text;n.classList.remove('hidden');clearTimeout(n._t);n._t=setTimeout(()=>n.classList.add('hidden'),3200)}
-function destroyQuestMap(){if(questMap){questMap.remove();questMap=null}if(glRoute){try{glRoute.destroy()}catch(_){}glRoute=null}routeLayer=null;routeSeq=null;if(glMap){try{glMap.destroy()}catch(_){}glMap=null;glStyleId='';glClear()}}
+function destroyQuestMap(){if(questMap){questMap.remove();questMap=null}rasterBaseLayer=null;if(glRoute){try{glRoute.destroy()}catch(_){}glRoute=null}routeLayer=null;routeSeq=null;if(glMap){try{glMap.destroy()}catch(_){}glMap=null;glStyleId='';glClear()}}
 function show(html){destroyQuestMap();root.innerHTML=html;window.scrollTo({top:0,behavior:'instant'});setTimeout(syncBackButton,0)}
 function completed(){return (state?.points||[]).filter(p=>p.completed_at).length}
 function pointBySeq(seq){return state?.points?.find(p=>p.seq===Number(seq))}
@@ -998,6 +998,10 @@ function pointMarkerIcon(p){
    и всё равно может построить маршрут в навигаторе. */
 function tileSources(){
   const list=(state?.map?.tile_urls||[]).filter(Boolean);
+  const styleKey=state?.map?.tile_style_keys?.[mapTheme];
+  if(styleKey){
+    const proxy=`/tiles/${styleKey}/{z}/{x}/{y}.png`;
+    return [proxy,...list.filter(url=>!String(url).startsWith('/tiles/'))]}
   if(list.length)return list;
   const single=state?.map?.tile_url;
   return single?[single]:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'];
@@ -1011,14 +1015,15 @@ function mapNotice(node,text){
 function mountTiles(node,area){
   const sources=tileSources();
   const map=questMap;
+  const previous=rasterBaseLayer;
   /* Перебор источников идёт по таймерам и переживает уход с экрана:
      к моменту срабатывания карта может быть уже уничтожена или пересоздана,
      поэтому каждый шаг сверяется с текущим экземпляром. */
   const alive=()=>map&&map===questMap&&!!map._container&&document.body.contains(node);
-  let index=0,layer=null;
+  let index=0,candidate=null;
   const attach=()=>{
     if(!alive())return;
-    if(layer){map.removeLayer(layer);layer=null}
+    if(candidate&&candidate!==previous){map.removeLayer(candidate);candidate=null}
     if(index>=sources.length){
       mapNotice(node,'Подложка не загрузилась. Точки и маршрут работают — жми «Построить маршрут».');
       return}
@@ -1028,10 +1033,19 @@ function mountTiles(node,area){
        запас квадратов вокруг экрана больше, новые не запрашиваются на
        каждый пиксель перетаскивания, а плавное проявление отключено —
        на телефоне оно и даёт ощущение подтормаживания. */
-    layer=L.tileLayer(url,{minZoom:10,maxZoom:18,noWrap:true,bounds:area,
+    const layer=L.tileLayer(url,{minZoom:10,maxZoom:18,noWrap:true,bounds:area,
       keepBuffer:4,updateWhenIdle:true,updateWhenZooming:false,fadeAnimation:false,
       subdomains:url.includes('{s}')?'abcd':'abc',crossOrigin:true}).addTo(map);
+    candidate=layer;
+    if(!previous)rasterBaseLayer=layer;
     layer.on('tileload',()=>{ok=true;node.querySelector('.map-notice')?.remove()});
+    /* При смене темы старый слой остаётся видимым, пока полностью не
+       загрузится новый. Поэтому экран не проваливается в чёрный фон. */
+    layer.once('load',()=>{
+      if(!alive())return;
+      rasterBaseLayer=layer;
+      if(previous&&previous!==layer)setTimeout(()=>{
+        if(alive()&&map.hasLayer(previous))map.removeLayer(previous)},350)});
     const next=()=>{if(ok||switched||!alive())return;switched=true;index+=1;attach()};
     /* Раньше источник менялся после первой же ошибки. Собственный сервер
        на холодном кэше отвечает медленнее внешних, поэтому приложение
@@ -1068,12 +1082,17 @@ function mapglHasStylePair(){const styles=mapglStyles();return !!styles.light&&!
 function configuredMapglStyle(){return mapglHasStylePair()?mapglStyles()[mapTheme]:mapglStyle()}
 // Обычного API-ключа достаточно для стандартной карты 2ГИС. Style ID
 // нужен только для фирменной пары тем, а не для запуска самого MapGL.
-function useMapgl(){return !!mapglKey()&&!!window.mapgl}
+function isIOSDevice(){return /iPad|iPhone|iPod/i.test(navigator.userAgent)||
+  (navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1)}
+/* На Android WebView и части ПК MapGL создаёт canvas и маркеры, но оставляет
+   базовый слой чёрным. Для них используем растровую карту с того же домена;
+   iPhone сохраняет плавную векторную карту 2ГИС. */
+function useMapgl(){return isIOSDevice()&&!!mapglKey()&&!!window.mapgl}
 function themeToggleMarkup(){
   // Один прежний MAPGL_STYLE нельзя плавно вернуть к стандартному стилю.
   // Для него оставляем фиксированную тему; ключ без стиля и полноценная
   // пара LIGHT/DARK поддерживают переключатель.
-  if(!mapglKey()||(mapglStyle()&&!mapglHasStylePair()))return '';
+  if(useMapgl()&&mapglStyle()&&!mapglHasStylePair())return '';
   const title=mapTheme==='dark'?'Светлая карта':'Тёмная карта';
   return `<button id="map-theme-toggle" class="map-theme-toggle" onclick="toggleMapTheme()" aria-label="${title}" title="${title}">${mapTheme==='dark'?'☀':'☾'}</button>`}
 function refreshThemeButton(){
@@ -1091,6 +1110,9 @@ function applyMapTheme(announce=false){
         Promise.resolve(changed).then(()=>button?.removeAttribute('aria-busy')).catch(()=>{
           button?.removeAttribute('aria-busy');toast('Не удалось сменить стиль 2ГИС')})
       }catch(_){button?.removeAttribute('aria-busy');toast('Не удалось сменить стиль 2ГИС')}}}
+  else if(mapEngine==='raster'&&questMap&&window.L){
+    const raw=state?.map?.bounds||{south:43.60,west:40.10,north:43.77,east:40.37};
+    mountTiles(node,L.latLngBounds([raw.south,raw.west],[raw.north,raw.east]))}
   if(announce)toast(mapTheme==='dark'?'Тёмная карта включена':'Светлая карта включена')}
 function toggleMapTheme(){
   mapTheme=mapTheme==='dark'?'light':'dark';
@@ -1196,14 +1218,14 @@ function glFitAll(p){
 function initUserMap(p){
   const node=document.getElementById('quest-map');
   if(!node)return;
-  if(mapglKey()&&!window.mapgl&&!window.__mapglFailed){
+  if(isIOSDevice()&&mapglKey()&&!window.mapgl&&!window.__mapglFailed){
     // Библиотека подгружается один раз, дальше карта строится сразу.
     loadMapgl(()=>initUserMap(p));
     return}
   if(useMapgl())return initGlMap(node,p);
   return initRasterMap(node,p)}
 
-function initRasterMap(node,p){const n=document.getElementById('quest-map');if(!n)return;const themeButton=document.getElementById('map-theme-toggle');if(themeButton)themeButton.hidden=true;if(!window.L){n.innerHTML='<div class="user-map-fallback"><b>Карта не загрузилась</b><span>Маршрут всё равно откроется в Яндекс Картах или 2ГИС.</span></div>';return}const raw=state?.map?.bounds||{south:43.60,west:40.10,north:43.77,east:40.37},area=L.latLngBounds([raw.south,raw.west],[raw.north,raw.east]);questMap=L.map(n,{zoomControl:false,attributionControl:false,preferCanvas:true,maxBounds:area,maxBoundsViscosity:1,minZoom:10,maxZoom:18,scrollWheelZoom:false,boxZoom:false,fadeAnimation:false,zoomAnimation:true,markerZoomAnimation:true});rasterMarkers=new Map();mountTiles(n,area);const pointCoords=[];(state?.points||[]).forEach(point=>{const coords=[point.latitude,point.longitude];pointCoords.push(coords);if(state?.scan_requires_geo&&!point.completed_at){L.circle(coords,{radius:point.radius_m||100,color:'#8fe300',weight:1,opacity:.55,fillColor:'#8fe300',fillOpacity:.08,interactive:false}).addTo(questMap)}const m=L.marker(coords,{icon:pointMarkerIcon(point),keyboard:true,title:point.point_name,riseOnHover:true}).addTo(questMap);rasterMarkers.set(point.seq,m);m.getElement()?.setAttribute('aria-label',`${point.seq}. ${point.point_name}`);m.on('click',()=>{sheetOpen=true;selectPoint(point.seq)})});const target=[p.latitude,p.longitude],visible=[...pointCoords];if(localPosition){const userCoords=[localPosition.lat,localPosition.lon],inside=area.contains(userCoords);L.marker(userCoords,{icon:L.divIcon({className:'bb-user-marker-wrap',html:'<span class="bb-user-marker"><i></i></span>',iconSize:[34,34],iconAnchor:[17,17]}),interactive:false}).addTo(questMap);if(inside){visible.push(userCoords);if(localDistance(p)<30000)L.polyline([userCoords,target],{color:'#83ed36',weight:3,dashArray:'7 8',opacity:.8}).addTo(questMap)}}const bottomPad=Math.round(window.innerHeight*(sheetOpen?0.5:0.22))+40;if(visible.length>1)questMap.fitBounds(visible,{paddingTopLeft:[46,96],paddingBottomRight:[46,bottomPad],maxZoom:15});else questMap.setView(target,15);/* Карта создаётся до того, как браузер закончил раскладку полноэкранного
+function initRasterMap(node,p){const n=document.getElementById('quest-map');if(!n)return;const themeButton=document.getElementById('map-theme-toggle');if(themeButton)themeButton.hidden=false;if(!window.L){n.innerHTML='<div class="user-map-fallback"><b>Карта не загрузилась</b><span>Маршрут всё равно откроется в Яндекс Картах или 2ГИС.</span></div>';return}const raw=state?.map?.bounds||{south:43.60,west:40.10,north:43.77,east:40.37},area=L.latLngBounds([raw.south,raw.west],[raw.north,raw.east]);rasterBaseLayer=null;questMap=L.map(n,{zoomControl:false,attributionControl:false,preferCanvas:true,maxBounds:area,maxBoundsViscosity:1,minZoom:10,maxZoom:18,scrollWheelZoom:false,boxZoom:false,fadeAnimation:false,zoomAnimation:true,markerZoomAnimation:true});rasterMarkers=new Map();mountTiles(n,area);const pointCoords=[];(state?.points||[]).forEach(point=>{const coords=[point.latitude,point.longitude];pointCoords.push(coords);if(state?.scan_requires_geo&&!point.completed_at){L.circle(coords,{radius:point.radius_m||100,color:'#8fe300',weight:1,opacity:.55,fillColor:'#8fe300',fillOpacity:.08,interactive:false}).addTo(questMap)}const m=L.marker(coords,{icon:pointMarkerIcon(point),keyboard:true,title:point.point_name,riseOnHover:true}).addTo(questMap);rasterMarkers.set(point.seq,m);m.getElement()?.setAttribute('aria-label',`${point.seq}. ${point.point_name}`);m.on('click',()=>{sheetOpen=true;selectPoint(point.seq)})});const target=[p.latitude,p.longitude],visible=[...pointCoords];if(localPosition){const userCoords=[localPosition.lat,localPosition.lon],inside=area.contains(userCoords);L.marker(userCoords,{icon:L.divIcon({className:'bb-user-marker-wrap',html:'<span class="bb-user-marker"><i></i></span>',iconSize:[34,34],iconAnchor:[17,17]}),interactive:false}).addTo(questMap);if(inside){visible.push(userCoords);if(localDistance(p)<30000)L.polyline([userCoords,target],{color:'#83ed36',weight:3,dashArray:'7 8',opacity:.8}).addTo(questMap)}}const bottomPad=Math.round(window.innerHeight*(sheetOpen?0.5:0.22))+40;if(visible.length>1)questMap.fitBounds(visible,{paddingTopLeft:[46,96],paddingBottomRight:[46,bottomPad],maxZoom:15});else questMap.setView(target,15);/* Карта создаётся до того, как браузер закончил раскладку полноэкранного
    экрана, и слой линий успевает посчитать себе нулевой размер — маршрут
    и пунктир до участника оказывались за пределами видимой области.
    Пересчитываем размер после раскладки и следим за ним дальше. */

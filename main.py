@@ -1200,6 +1200,10 @@ class QuestService:
                     "light": self.settings.mapgl_style_light,
                     "dark": self.settings.mapgl_style_dark,
                 },
+                "tile_style_keys": {
+                    "light": tile_style_tag("light", self.settings.tile_palette_name),
+                    "dark": tile_style_tag("dark", self.settings.tile_palette_name),
+                },
                 "attribution": self.settings.map_attribution,
                 "bounds": {
                     "south": self.POLYANA_BOUNDS[0][0],
@@ -1482,7 +1486,7 @@ class QuestService:
         return {
             "campaign": campaign, "points": points, "metrics": metrics, "funnel": funnel,
             "recent": recent, "qr_codes": qr_codes,
-            "map": {"tile_url": self.settings.map_tile_url, "tile_urls": list(self.settings.map_tile_urls), "attribution": self.settings.map_attribution, "mapgl_key": mapgl_key_for(self.settings), "mapgl_style": self.settings.mapgl_style, "mapgl_styles": {"light": self.settings.mapgl_style_light, "dark": self.settings.mapgl_style_dark}},
+            "map": {"tile_url": self.settings.map_tile_url, "tile_urls": list(self.settings.map_tile_urls), "attribution": self.settings.map_attribution, "mapgl_key": mapgl_key_for(self.settings), "mapgl_style": self.settings.mapgl_style, "mapgl_styles": {"light": self.settings.mapgl_style_light, "dark": self.settings.mapgl_style_dark}, "tile_style_keys": {"light": tile_style_tag("light", self.settings.tile_palette_name), "dark": tile_style_tag("dark", self.settings.tile_palette_name)}},
             "map_bounds": {"south": self.POLYANA_BOUNDS[0][0], "west": self.POLYANA_BOUNDS[0][1], "north": self.POLYANA_BOUNDS[1][0], "east": self.POLYANA_BOUNDS[1][1]},
         }
 
@@ -2366,9 +2370,9 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         cache_put(photo_cache, file_id, data, 40)
         return web.Response(body=data, content_type="image/jpeg", headers=headers)
 
-    async def fetch_tile(z: int, x: int, y: int) -> bytes | None:
+    async def fetch_tile(z: int, x: int, y: int, style: str) -> bytes | None:
         """Скачать квадрат карты, перекрасить и положить в память."""
-        key = f"{z}/{x}/{y}"
+        key = f"{style}/{z}/{x}/{y}"
         cached = tile_cache.get(key)
         if cached is not None:
             return cached
@@ -2384,7 +2388,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
                 continue
             if not data:
                 continue
-            if settings.tile_theme == "dark":
+            if style == tile_style_tag("dark", settings.tile_palette_name):
                 try:
                     data = darken_tile(data, tile_palette(settings.tile_palette_name))
                 except Exception:
@@ -2410,14 +2414,21 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
             raise web.HTTPNotFound()
         if not (1 <= z <= 19) or not (0 <= x < 2 ** z) or not (0 <= y < 2 ** z):
             raise web.HTTPNotFound()
-        key = f"{z}/{x}/{y}"
+        style = request.match_info.get("style") or tile_style_tag(settings.tile_theme, settings.tile_palette_name)
+        allowed_styles = {
+            tile_style_tag("light", settings.tile_palette_name),
+            tile_style_tag("dark", settings.tile_palette_name),
+        }
+        if style not in allowed_styles:
+            raise web.HTTPNotFound()
+        key = f"{style}/{z}/{x}/{y}"
         # Адрес содержит отпечаток оформления, поэтому картинку можно
         # хранить долго: при смене палитры адрес меняется сам.
         headers = {"Cache-Control": "public, max-age=604800, immutable"}
         cached = tile_cache.get(key)
         if cached is not None:
             return web.Response(body=cached, content_type="image/png", headers=headers)
-        data = await fetch_tile(z, x, y)
+        data = await fetch_tile(z, x, y, style)
         if data is None:
             raise web.HTTPNotFound()
         return web.Response(body=data, content_type="image/png", headers=headers)
@@ -2515,10 +2526,11 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
                         if done >= 700:
                             log.info("Прогрев остановлен на пределе в 700 квадратов")
                             return
-                        if f"{zoom}/{x}/{y}" in tile_cache:
+                        style = tile_style_tag(settings.tile_theme, settings.tile_palette_name)
+                        if f"{style}/{zoom}/{x}/{y}" in tile_cache:
                             continue
                         try:
-                            await fetch_tile(zoom, x, y)
+                            await fetch_tile(zoom, x, y, style)
                             done += 1
                         except Exception:
                             pass
