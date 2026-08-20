@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS campaigns (
     city TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','active','paused','ended')),
     session_duration_min INTEGER NOT NULL DEFAULT 240 CHECK(session_duration_min BETWEEN 30 AND 1440),
-    premium_title TEXT NOT NULL DEFAULT 'Премиум bb.bike на 30 дней',
+    premium_title TEXT NOT NULL DEFAULT 'Premium BBBIKE на 30 дней',
     premium_instruction TEXT NOT NULL DEFAULT 'Покажи этот экран администратору. Премиум будет оформлен вручную.',
     starts_at TEXT,
     ends_at TEXT,

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Квест «Паспорт долины» — Telegram-бот с мини-приложением.
+"""Квест BBBIKE — Telegram-бот с мини-приложением.
 
 Единый файл: настройки, база, безопасность, логика квеста, бот и веб-сервер.
 Разделы идут в порядке зависимостей и отмечены заголовками — ищи по названию
@@ -129,14 +129,28 @@ DEFAULT_TILE_SOURCES = (
     "https://tile.openstreetmap.de/{z}/{x}/{y}.png",
 )
 
+DEFAULT_MAPGL_LIGHT_STYLE = "c080bb6a-8134-4993-93a1-5b4d8c36a59b"
+DEFAULT_MAPGL_DARK_STYLE = "9643e8da-173b-4359-9fee-8a1fe58e68aa"
+
 
 def _tile_upstreams() -> tuple[str, ...]:
     raw = os.getenv("TILE_UPSTREAMS", "")
     chosen = [item.strip() for item in raw.split(",") if item.strip()]
-    return tuple(chosen) or (
-        "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-        "https://tile.openstreetmap.de/{z}/{x}/{y}.png",
-    )
+    if chosen:
+        return tuple(chosen)
+    # На Android WebView векторный WebGL может быть недоступен даже при
+    # исправном ключе. В таком случае тот же серверный proxy сначала пробует
+    # официальный 2ГИС Raster Tiles API и лишь затем резервные OSM-тайлы.
+    # Если тариф ключа не включает Raster Tiles, ответ будет пропущен.
+    sources: list[str] = []
+    map_key = os.getenv("MAPGL_KEY", "").strip()
+    if map_key:
+        sources.append(
+            "https://tile0.maps.2gis.com/v2/tiles/online_sd/{z}/{x}/{y}.png"
+            f"?key={map_key}"
+        )
+    sources.extend(DEFAULT_TILE_SOURCES)
+    return tuple(sources)
 
 
 def _tile_sources(_style_tag: str) -> tuple[str, ...]:
@@ -212,7 +226,7 @@ def load_settings() -> Settings:
         map_tile_url=os.getenv("MAP_TILE_URL", "https://tile.openstreetmap.org/{z}/{x}/{y}.png"),
         # Подпись на карте. Указание OpenStreetMap обязательно по лицензии
         # тайлов, но выводится компактно и рядом с брендом.
-        map_attribution=os.getenv("MAP_ATTRIBUTION", "bb.bike · © OpenStreetMap"),
+        map_attribution=os.getenv("MAP_ATTRIBUTION", "BBBIKE · © OpenStreetMap"),
         # Несколько подложек подряд. Один источник — единая точка отказа:
         # если он недоступен из сети гостя (роуминг, VPN, блокировка), карта
         # остаётся пустой. Приложение перебирает список сверху вниз.
@@ -239,8 +253,8 @@ def load_settings() -> Settings:
         # Пара опубликованных стилей позволяет менять тему методом
         # setStyleById(), не уничтожая карту, маркеры и построенный маршрут.
         # MAPGL_STYLE оставлен как прежнее имя одного фиксированного стиля.
-        mapgl_style_light=os.getenv("MAPGL_STYLE_LIGHT", "").strip(),
-        mapgl_style_dark=os.getenv("MAPGL_STYLE_DARK", "").strip(),
+        mapgl_style_light=os.getenv("MAPGL_STYLE_LIGHT", "").strip() or DEFAULT_MAPGL_LIGHT_STYLE,
+        mapgl_style_dark=os.getenv("MAPGL_STYLE_DARK", "").strip() or DEFAULT_MAPGL_DARK_STYLE,
         # Сколько раз в сутки отдавать ключ 2ГИС. Дальше приложение само
         # переходит на бесплатную карту — так наплыв людей не приведёт
         # к неожиданному счёту. 0 — без ограничения.
@@ -274,7 +288,7 @@ CREATE TABLE IF NOT EXISTS campaigns (
     city TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','active','paused','ended')),
     session_duration_min INTEGER NOT NULL DEFAULT 240 CHECK(session_duration_min BETWEEN 30 AND 1440),
-    premium_title TEXT NOT NULL DEFAULT 'Премиум bb.bike на 30 дней',
+    premium_title TEXT NOT NULL DEFAULT 'Premium BBBIKE на 30 дней',
     premium_instruction TEXT NOT NULL DEFAULT 'Покажи этот экран администратору. Премиум будет оформлен вручную.',
     starts_at TEXT,
     ends_at TEXT,
@@ -486,6 +500,10 @@ class Database:
             pass
         await self._db.execute(
             "INSERT INTO schema_meta(key,value) VALUES('version','2') ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        )
+        await self._db.execute(
+            """UPDATE campaigns SET premium_title='Premium BBBIKE на 30 дней'
+               WHERE premium_title IN ('Премиум bb.bike на 30 дней','Premium bb.bike на 30 дней')"""
         )
         await self._db.commit()
         check = await (await self._db.execute("PRAGMA quick_check")).fetchone()
@@ -1354,7 +1372,7 @@ class QuestService:
                             completed_seq = current["seq"]
             if rejected:
                 if unknown_code:
-                    raise QuestError("unknown_qr", "Такого кода нет. Проверь зелёную табличку bb.bike у стойки.", 409)
+                    raise QuestError("unknown_qr", "Такого кода нет. Проверь зелёную табличку BBBIKE у стойки.", 409)
                 raise QuestError("wrong_qr", "Это код другой точки. Проверь табличку у стойки.", 409)
             async with self.db.transaction() as db:
                 result = await self._state_in_tx(db, identity.user_id)
@@ -1852,10 +1870,10 @@ async def setup_bot_commands(bot: Bot, settings: Settings) -> None:
         BotCommand(command="participant", description="Статус участника (админ)"),
         BotCommand(command="admins", description="Кто имеет доступ к CRM (админ)"),
     ])
-    await bot.set_my_short_description("Квест bb.bike по трём точкам Красной Поляны")
+    await bot.set_my_short_description("Квест BBBIKE по трём точкам Красной Поляны")
     await bot.set_my_description(
         "Выбирай партнёрские точки в любом порядке, строй маршрут, ставь QR-штампы "
-        "и забирай подарки. После трёх точек — Premium bb.bike."
+        "и забирай подарки. После трёх точек — Premium BBBIKE."
     )
     await bot.set_chat_menu_button(
         menu_button=MenuButtonWebApp(text="Открыть квест", web_app=WebAppInfo(url=settings.webapp_url))
@@ -1874,25 +1892,25 @@ def build_router(service: QuestService, settings: Settings) -> Router:
         payload = (command.args or "").strip()
         if payload.startswith("bbq-"):
             await message.answer(
-                "<b>Ты нашёл точку квеста bb.bike</b> 💚\n\n"
+                "<b>Ты нашёл точку квеста BBBIKE</b> 💚\n\n"
                 "Это одна из трёх партнёрских точек в Красной Поляне. "
                 "Открой приложение — отметка засчитается сама, а подарок партнёра "
-                "сохранится в паспорте.\n\n"
-                "Собери все три штампа и получи Premium bb.bike на 30 дней.",
+                "сохранится в квесте.\n\n"
+                "Собери все три штампа и получи Premium BBBIKE на 30 дней.",
                 reply_markup=quest_keyboard(settings),
             )
             return
         text = (
-            "<b>Добро пожаловать в квест bb.bike</b> 💚\n\n"
+            "<b>Добро пожаловать в квест BBBIKE</b> 💚\n\n"
             "Гуляй по Красной Поляне, отмечайся на локациях, получай подарки "
             "от наших партнёров. А за завершённый квест — МЕСЯЦ бесплатной "
-            "активации Bibibike.\n\n"
+            "активации BBBIKE.\n\n"
             "Здесь всё просто:\n"
             "1. Выбери любую из трёх точек.\n"
             "2. Построй маршрут в Яндекс Картах или 2ГИС.\n"
             "3. На месте отсканируй QR через мини-приложение и забери подарок.\n\n"
             "Как только отсканировано 3 уникальных QR-кода — квест считается "
-            "пройденным. А в подарок — Premium bb.bike на 30 дней 🛵\n\n"
+            "пройденным. А в подарок — Premium BBBIKE на 30 дней 🛵\n\n"
             "Во время поездки следи за дорогой, а телефон используй только "
             "после полной остановки."
         )
@@ -2026,7 +2044,7 @@ def build_router(service: QuestService, settings: Settings) -> Router:
         try:
             await bot.send_message(
                 user_id,
-                "<b>Тебе открыли доступ к CRM квеста bb.bike</b>\n\n"
+                "<b>Тебе открыли доступ к CRM квеста BBBIKE</b>\n\n"
                 "Панель открывается командой /admin в этом чате. "
                 "Ссылка персональная и живёт ограниченное время — "
                 "если истечёт, просто вызови команду снова.",
@@ -2445,7 +2463,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         page = (
             "<!doctype html><html lang=\"ru\"><head><meta charset=\"utf-8\">"
             "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-            "<title>Квест bb.bike · Красная Поляна</title>"
+            "<title>Квест BBBIKE · Красная Поляна</title>"
             "<style>body{margin:0;min-height:100vh;display:grid;place-content:center;justify-items:center;"
             "gap:18px;padding:28px;background:#07110b;color:#f2f7f1;text-align:center;"
             "font:16px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif}"
@@ -2453,9 +2471,9 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
             "p{margin:0;max-width:340px;color:#a9bbad}"
             "a{margin-top:6px;padding:15px 26px;border-radius:14px;background:#8fe300;color:#07110b;"
             "font-weight:800;text-decoration:none}</style></head><body>"
-            "<h1>Ты нашёл точку квеста bb.bike</h1>"
+            "<h1>Ты нашёл точку квеста BBBIKE</h1>"
             "<p>Это одна из трёх партнёрских точек в Красной Поляне. Открой квест в Telegram — "
-            "отметка засчитается сама, а подарок партнёра сохранится в паспорте.</p>"
+            "отметка засчитается сама, а подарок партнёра сохранится в квесте.</p>"
             f'<a href="{safe_target}">Открыть в Telegram</a>'
             "</body></html>"
         )
@@ -2701,7 +2719,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         try:
             await bot.send_message(
                 user_id,
-                "<b>Тебе открыли доступ к CRM квеста bb.bike</b>\n\n"
+                "<b>Тебе открыли доступ к CRM квеста BBBIKE</b>\n\n"
                 "Панель открывается командой /admin в этом чате.",
             )
             notified = True
@@ -2888,7 +2906,7 @@ async def run() -> None:
     await runner.cleanup()
     await bot.session.close()
     await db.close()
-    log.info("BibiBike Quest остановлен штатно")
+    log.info("BBBIKE Quest остановлен штатно")
 
 
 if __name__ == "__main__":

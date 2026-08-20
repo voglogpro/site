@@ -134,6 +134,11 @@ async def main() -> None:
     webapp = (Path(__file__).resolve().parent.parent / "index.html").read_text(encoding="utf-8")
     assert "function useMapgl(){return !!mapglKey()&&!!window.mapgl}" in webapp
     assert "glMap.setStyleById(next)" in webapp and "id=\"map-theme-toggle\"" in webapp
+    assert "coverMapPreview" not in webapp and 'class="cover-map"' not in webapp
+    assert ".map-tone-dark canvas" not in webapp
+    assert "opts.webglVersion=1" in webapp and "disableAntiAliasing:android" in webapp
+    assert production.DEFAULT_MAPGL_LIGHT_STYLE == "c080bb6a-8134-4993-93a1-5b4d8c36a59b"
+    assert production.DEFAULT_MAPGL_DARK_STYLE == "9643e8da-173b-4359-9fee-8a1fe58e68aa"
     settings = load_settings()
     admin_id = next(iter(settings.admin_ids))
     ticket = create_admin_ticket(admin_id, settings, now=1_000)
