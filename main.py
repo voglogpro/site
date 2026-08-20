@@ -17,6 +17,7 @@ import base64
 import csv
 import hashlib
 import hmac
+import html
 import io
 import json
 import logging
@@ -45,7 +46,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qsl, urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse
 
 
 # ========================================================================
@@ -96,6 +97,7 @@ class Settings:
     location_stale_sec: int
     location_retention_days: int
     support_url: str
+    support_chat_id: str
     map_tile_url: str
     map_tile_urls: tuple[str, ...]
     tile_upstreams: tuple[str, ...]
@@ -106,7 +108,6 @@ class Settings:
     mapgl_style: str
     mapgl_style_light: str
     mapgl_style_dark: str
-    mapgl_daily_limit: int
     map_attribution: str
     dev_mode: bool
     dev_user_id: int
@@ -223,6 +224,10 @@ def load_settings() -> Settings:
         location_stale_sec=int(os.getenv("LOCATION_STALE_SEC", "300")),
         location_retention_days=int(os.getenv("LOCATION_RETENTION_DAYS", "7")),
         support_url=os.getenv("SUPPORT_URL", "https://t.me/bbbike_support"),
+        # Username (@bbbike_support), numeric chat id or channel id where a
+        # completed quest should create an operator request. When it is not
+        # configured, the participant gets a pre-filled support deep link.
+        support_chat_id=os.getenv("SUPPORT_CHAT_ID", "").strip(),
         map_tile_url=os.getenv("MAP_TILE_URL", "https://tile.openstreetmap.org/{z}/{x}/{y}.png"),
         # Подпись на карте. Указание OpenStreetMap обязательно по лицензии
         # тайлов, но выводится компактно и рядом с брендом.
@@ -255,10 +260,6 @@ def load_settings() -> Settings:
         # MAPGL_STYLE оставлен как прежнее имя одного фиксированного стиля.
         mapgl_style_light=os.getenv("MAPGL_STYLE_LIGHT", "").strip() or DEFAULT_MAPGL_LIGHT_STYLE,
         mapgl_style_dark=os.getenv("MAPGL_STYLE_DARK", "").strip() or DEFAULT_MAPGL_DARK_STYLE,
-        # Сколько раз в сутки отдавать ключ 2ГИС. Дальше приложение само
-        # переходит на бесплатную карту — так наплыв людей не приведёт
-        # к неожиданному счёту. 0 — без ограничения.
-        mapgl_daily_limit=_int("MAPGL_DAILY_LIMIT", 1500),
         dev_mode=dev_mode,
         dev_user_id=dev_user_id,
         # Выключено по умолчанию: включай, только если все точки проверены
@@ -289,7 +290,7 @@ CREATE TABLE IF NOT EXISTS campaigns (
     status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','active','paused','ended')),
     session_duration_min INTEGER NOT NULL DEFAULT 240 CHECK(session_duration_min BETWEEN 30 AND 1440),
     premium_title TEXT NOT NULL DEFAULT 'Premium BBBIKE на 30 дней',
-    premium_instruction TEXT NOT NULL DEFAULT 'Покажи этот экран администратору. Премиум будет оформлен вручную.',
+    premium_instruction TEXT NOT NULL DEFAULT 'Нажми «Получить Premium». Команда BBBIKE проверит квест и подключит подписку на 30 дней.',
     starts_at TEXT,
     ends_at TEXT,
     created_at TEXT NOT NULL,
@@ -406,6 +407,11 @@ CREATE TABLE IF NOT EXISTS premium_entitlements (
     session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
     public_code TEXT NOT NULL UNIQUE,
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','issued','cancelled')),
+    requested_at TEXT,
+    request_id TEXT UNIQUE,
+    support_notified_at TEXT,
+    support_notification_claim TEXT,
+    support_notification_claimed_at TEXT,
     issued_at TEXT,
     created_at TEXT NOT NULL
 );
@@ -503,12 +509,37 @@ class Database:
             await self._db.execute("ALTER TABLE session_points ADD COLUMN reward_redeem_request_id TEXT")
         except Exception:
             pass
+        # Premium v3: completion unlocks the reward, while an explicit user
+        # action creates the support request. Every ALTER is idempotent for
+        # already-running SQLite volumes.
+        for column, definition in (
+            ("requested_at", "TEXT"),
+            ("request_id", "TEXT"),
+            ("support_notified_at", "TEXT"),
+            ("support_notification_claim", "TEXT"),
+            ("support_notification_claimed_at", "TEXT"),
+        ):
+            try:
+                await self._db.execute(
+                    f"ALTER TABLE premium_entitlements ADD COLUMN {column} {definition}"
+                )
+            except Exception:
+                pass
+        await self._db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS premium_request_id_unique "
+            "ON premium_entitlements(request_id) WHERE request_id IS NOT NULL"
+        )
         await self._db.execute(
             "INSERT INTO schema_meta(key,value) VALUES('version','2') ON CONFLICT(key) DO UPDATE SET value=excluded.value"
         )
         await self._db.execute(
             """UPDATE campaigns SET premium_title='Premium BBBIKE на 30 дней'
                WHERE premium_title IN ('Премиум bb.bike на 30 дней','Premium bb.bike на 30 дней')"""
+        )
+        await self._db.execute(
+            """UPDATE campaigns
+               SET premium_instruction='Нажми «Получить Premium». Команда BBBIKE проверит квест и подключит подписку на 30 дней.'
+               WHERE premium_instruction='Покажи этот экран администратору. Премиум будет оформлен вручную.'"""
         )
         await self._db.commit()
         check = await (await self._db.execute("PRAGMA quick_check")).fetchone()
@@ -701,7 +732,7 @@ def validate_admin_ticket(ticket: str, settings: Settings, now: int | None = Non
     return user_id if hmac.compare_digest(expected, received) else None
 
 
-SERVICE_WORKER_JS = r"""/* Service worker квеста «Паспорт долины».
+SERVICE_WORKER_JS = r"""/* Service worker квеста BBBIKE.
  *
  * Зачем: в Красной Поляне связь пропадает целыми участками. Без этого файла
  * закрытое и заново открытое мини-приложение не грузится вообще — не открывается
@@ -987,6 +1018,12 @@ class QuestService:
         self._user_locks: dict[int, asyncio.Lock] = {}
 
     def lock_for(self, user_id: int) -> asyncio.Lock:
+        # Long campaigns can see many unique Telegram ids. Keep active locks,
+        # but periodically drop unlocked entries so the dictionary cannot grow
+        # forever after one-off visitors.
+        if len(self._user_locks) > 2048:
+            for stale_id in [key for key, lock in self._user_locks.items() if not lock.locked()][:512]:
+                self._user_locks.pop(stale_id, None)
         return self._user_locks.setdefault(user_id, asyncio.Lock())
 
     async def ensure_demo_campaign(self) -> None:
@@ -1163,7 +1200,12 @@ class QuestService:
             point_data.append(item)
         entitlement = None
         if session:
-            entitlement = await (await db.execute("SELECT public_code,status FROM premium_entitlements WHERE session_id=?", (session["id"],))).fetchone()
+            entitlement = await (await db.execute(
+                """SELECT public_code,status,requested_at,support_notified_at,issued_at,
+                          (support_notification_claim IS NOT NULL) support_notification_pending
+                   FROM premium_entitlements WHERE session_id=?""",
+                (session["id"],),
+            )).fetchone()
         session_data = row_dict(session)
         if session_data:
             for key in ("live_chat_id", "live_message_id", "last_location_at", "last_latitude", "last_longitude"):
@@ -1444,6 +1486,83 @@ class QuestService:
                     },
                 }
 
+    async def request_premium(self, identity: TelegramIdentity, request_id: str) -> dict:
+        """Create one explicit and retry-safe Premium request after completion."""
+        request_id = (request_id or "").strip()
+        if not (16 <= len(request_id) <= 100) or not re.fullmatch(r"[A-Za-z0-9._:-]+", request_id):
+            raise QuestError("bad_request_id", "Не удалось безопасно отправить заявку. Попробуй ещё раз.", 400)
+        async with self.lock_for(identity.user_id):
+            async with self.db.transaction() as db:
+                row = await (await db.execute(
+                    """SELECT e.*,s.status session_status,p.user_id,p.display_name,p.username
+                       FROM premium_entitlements e
+                       JOIN sessions s ON s.id=e.session_id
+                       JOIN participants p ON p.user_id=s.user_id
+                       WHERE s.user_id=? ORDER BY s.started_at DESC LIMIT 1""",
+                    (identity.user_id,),
+                )).fetchone()
+                if not row or row["session_status"] != "completed":
+                    raise QuestError("premium_locked", "Сначала заверши все три точки квеста.", 409)
+                if row["status"] == "cancelled":
+                    raise QuestError("premium_cancelled", "Эта заявка отменена. Напиши в поддержку BBBIKE.", 409)
+                requested_at = row["requested_at"] or iso()
+                if not row["requested_at"]:
+                    try:
+                        await db.execute(
+                            "UPDATE premium_entitlements SET requested_at=?,request_id=? WHERE id=? AND requested_at IS NULL",
+                            (requested_at, request_id, row["id"]),
+                        )
+                    except aiosqlite.IntegrityError:
+                        raise QuestError("duplicate_request", "Эта заявка уже обработана. Обнови экран.", 409)
+
+                claim = ""
+                if self.settings.support_chat_id and row["status"] == "pending" and not row["support_notified_at"]:
+                    stale_before = iso(utcnow() - timedelta(minutes=5))
+                    claim = uuid.uuid4().hex
+                    cursor = await db.execute(
+                        """UPDATE premium_entitlements
+                           SET support_notification_claim=?,support_notification_claimed_at=?
+                           WHERE id=? AND support_notified_at IS NULL
+                             AND (support_notification_claim IS NULL OR support_notification_claimed_at<?)""",
+                        (claim, iso(), row["id"], stale_before),
+                    )
+                    if cursor.rowcount != 1:
+                        claim = ""
+                data = await self._state_in_tx(db, identity.user_id)
+                return {
+                    "data": data,
+                    "notification_claim": claim,
+                    "session_id": row["session_id"],
+                    "participant": {
+                        "user_id": row["user_id"],
+                        "display_name": row["display_name"],
+                        "username": row["username"],
+                        "public_code": row["public_code"],
+                        "requested_at": requested_at,
+                    },
+                }
+
+    async def finish_premium_notification(self, session_id: str, claim: str, success: bool) -> None:
+        """Finish a claimed support delivery without duplicating messages."""
+        if not claim:
+            return
+        async with self.db.transaction() as db:
+            if success:
+                await db.execute(
+                    """UPDATE premium_entitlements
+                       SET support_notified_at=?,support_notification_claim=NULL,
+                           support_notification_claimed_at=NULL
+                       WHERE session_id=? AND support_notification_claim=?""",
+                    (iso(), session_id, claim),
+                )
+            else:
+                await db.execute(
+                    """UPDATE premium_entitlements
+                       SET support_notification_claim=NULL,support_notification_claimed_at=NULL
+                       WHERE session_id=? AND support_notification_claim=?""",
+                    (session_id, claim),
+                )
+
     async def admin_overview(self) -> dict:
         campaign = row_dict(await self._campaign())
         points = [row_dict(r) for r in await self.db.fetchall("SELECT * FROM points ORDER BY seq")]
@@ -1466,7 +1585,8 @@ class QuestService:
                FROM session_points WHERE completed_at IS NOT NULL"""
         ))
         premium_metrics = row_dict(await self.db.fetchone(
-            """SELECT COALESCE(SUM(status='pending'),0) premium_pending,
+            """SELECT COALESCE(SUM(status='pending' AND requested_at IS NOT NULL),0) premium_pending,
+               COALESCE(SUM(status='pending' AND requested_at IS NULL),0) premium_unrequested,
                COALESCE(SUM(status='issued'),0) premium_issued
                FROM premium_entitlements"""
         ))
@@ -1475,10 +1595,27 @@ class QuestService:
         recent = [row_dict(r) for r in await self.db.fetchall(
             """SELECT s.id,s.status,s.current_seq,s.started_at,s.completed_at,s.integrity_status,
                (SELECT COUNT(*) FROM session_points sp WHERE sp.session_id=s.id AND sp.completed_at IS NOT NULL) completed_points,
-               p.user_id,p.display_name,p.username,e.status premium_status,e.public_code premium_code
+               p.user_id,p.display_name,p.username,e.status premium_status,e.public_code premium_code,
+               e.requested_at premium_requested_at,e.support_notified_at premium_support_notified_at,
+               e.issued_at premium_issued_at
                FROM sessions s JOIN participants p ON p.user_id=s.user_id
                LEFT JOIN premium_entitlements e ON e.session_id=s.id
                ORDER BY s.started_at DESC LIMIT 500"""
+        )]
+        # The operator queue must not lose an old request merely because
+        # newer sessions pushed it out of the participant preview.
+        premium_requests = [row_dict(r) for r in await self.db.fetchall(
+            """SELECT s.id,s.status,s.completed_at,
+               p.user_id,p.display_name,p.username,
+               e.status premium_status,e.public_code premium_code,
+               e.requested_at premium_requested_at,
+               e.support_notified_at premium_support_notified_at,
+               e.issued_at premium_issued_at
+               FROM premium_entitlements e
+               JOIN sessions s ON s.id=e.session_id
+               JOIN participants p ON p.user_id=s.user_id
+               WHERE e.status='pending' AND e.requested_at IS NOT NULL
+               ORDER BY e.requested_at ASC"""
         )]
         qr_codes = [row_dict(r) for r in await self.db.fetchall(
             """SELECT q.id,q.point_id,q.label,q.manual_code,q.active,q.scan_count,q.last_scanned_at,q.created_at,
@@ -1487,7 +1624,7 @@ class QuestService:
         )]
         return {
             "campaign": campaign, "points": points, "metrics": metrics, "funnel": funnel,
-            "recent": recent, "qr_codes": qr_codes,
+            "recent": recent, "premium_requests": premium_requests, "qr_codes": qr_codes,
             "map": {"tile_url": self.settings.map_tile_url, "tile_urls": list(self.settings.map_tile_urls), "attribution": self.settings.map_attribution, "mapgl_key": mapgl_key_for(self.settings), "mapgl_style": self.settings.mapgl_style, "mapgl_styles": {"light": self.settings.mapgl_style_light, "dark": self.settings.mapgl_style_dark}, "tile_style_keys": {"light": tile_style_tag("light", self.settings.tile_palette_name), "dark": tile_style_tag("dark", self.settings.tile_palette_name)}},
             "map_bounds": {"south": self.POLYANA_BOUNDS[0][0], "west": self.POLYANA_BOUNDS[0][1], "north": self.POLYANA_BOUNDS[1][0], "east": self.POLYANA_BOUNDS[1][1]},
         }
@@ -1495,7 +1632,9 @@ class QuestService:
     async def participant_brief(self, user_id: int) -> dict | None:
         row = await self.db.fetchone(
             """SELECT p.user_id,p.display_name,p.username,s.status,s.current_seq,s.started_at,s.completed_at,
-               s.last_location_at,s.integrity_status,e.status premium_status,e.public_code premium_code
+               s.last_location_at,s.integrity_status,e.status premium_status,e.public_code premium_code,
+               e.requested_at premium_requested_at,e.support_notified_at premium_support_notified_at,
+               e.issued_at premium_issued_at
                FROM sessions s JOIN participants p ON p.user_id=s.user_id
                LEFT JOIN premium_entitlements e ON e.session_id=s.id WHERE s.user_id=?
                ORDER BY s.started_at DESC LIMIT 1""", (user_id,)
@@ -1811,17 +1950,41 @@ class QuestService:
                 actor_id, session_id, row["user_id"],
             )
 
-    async def mark_premium_issued(self, admin_id: int, session_id: str) -> None:
+    async def mark_premium_issued(self, admin_id: int, session_id: str) -> dict:
         async with self.db.transaction() as db:
-            row = await (await db.execute("SELECT id FROM premium_entitlements WHERE session_id=?", (session_id,))).fetchone()
+            row = await (await db.execute(
+                """SELECT e.id,e.status,e.requested_at,e.public_code,p.user_id,p.display_name
+                   FROM premium_entitlements e
+                   JOIN sessions s ON s.id=e.session_id
+                   JOIN participants p ON p.user_id=s.user_id
+                   WHERE e.session_id=?""",
+                (session_id,),
+            )).fetchone()
             if not row:
                 raise QuestError("premium_not_found", "Заявка на премиум не найдена.", 404)
-            await db.execute("UPDATE premium_entitlements SET status='issued',issued_at=? WHERE session_id=?", (iso(), session_id))
-            await db.execute("INSERT INTO admin_audit(admin_id,action,entity_type,entity_id,after_json,created_at) VALUES(?,?,?,?,?,?)", (admin_id, "premium.issue", "session", session_id, '{"status":"issued"}', iso()))
+            if not row["requested_at"]:
+                raise QuestError("premium_not_requested", "Участник ещё не отправил заявку на Premium.", 409)
+            if row["status"] not in {"pending", "issued"}:
+                raise QuestError("premium_cancelled", "Заявка отменена и не может быть выдана.", 409)
+            newly_issued = row["status"] == "pending"
+            if newly_issued:
+                await db.execute(
+                    "UPDATE premium_entitlements SET status='issued',issued_at=? WHERE session_id=? AND status='pending'",
+                    (iso(), session_id),
+                )
+                await db.execute(
+                    "INSERT INTO admin_audit(admin_id,action,entity_type,entity_id,after_json,created_at) VALUES(?,?,?,?,?,?)",
+                    (admin_id, "premium.issue", "session", session_id, '{"status":"issued"}', iso()),
+                )
+            return {
+                "user_id": row["user_id"], "display_name": row["display_name"],
+                "public_code": row["public_code"], "newly_issued": newly_issued,
+            }
 
     async def export_rows(self):
         return await self.db.fetchall(
-            """SELECT p.user_id,p.username,p.display_name,s.started_at,s.completed_at,e.public_code,e.status
+            """SELECT p.user_id,p.username,p.display_name,s.started_at,s.completed_at,
+                      e.requested_at,e.public_code,e.status,e.issued_at
                FROM premium_entitlements e JOIN sessions s ON s.id=e.session_id JOIN participants p ON p.user_id=s.user_id
                ORDER BY s.completed_at DESC"""
         )
@@ -1829,12 +1992,7 @@ class QuestService:
     async def janitor(self, stop: asyncio.Event) -> None:
         while not stop.is_set():
             cutoff = iso(utcnow() - timedelta(days=self.settings.location_retention_days))
-            now = iso()
             async with self.db.transaction() as db:
-                await db.execute(
-                    "UPDATE sessions SET status='expired' WHERE status IN ('awaiting_location','active') AND expires_at<?",
-                    (now,),
-                )
                 await db.execute(
                     """DELETE FROM location_observations WHERE received_at<? AND session_id IN
                        (SELECT id FROM sessions WHERE status IN ('completed','expired','cancelled'))""", (cutoff,)
@@ -2118,6 +2276,15 @@ def json_response(data, status=200):
     return response
 
 
+def support_draft_url(base_url: str, text: str) -> str:
+    """Return a Telegram-compatible support link with a pre-filled draft."""
+    base = (base_url or "").strip()
+    if not base:
+        return ""
+    separator = "&" if "?" in base else "?"
+    return f"{base}{separator}{urlencode({'text': text})}"
+
+
 async def json_body(request: web.Request, max_keys=30) -> dict:
     if request.content_type != "application/json":
         raise QuestError("json_required", "Ожидается JSON.", 415)
@@ -2146,9 +2313,16 @@ async def error_middleware(request, handler):
 class RateLimiter:
     def __init__(self):
         self.events: dict[str, deque[float]] = defaultdict(deque)
+        self._calls = 0
 
     def allow(self, key: str, limit: int, window: int = 60) -> bool:
         now = time.monotonic()
+        self._calls += 1
+        if self._calls % 256 == 0 and len(self.events) > 512:
+            cutoff = now - 600
+            for stale_key, stale_bucket in list(self.events.items()):
+                if not stale_bucket or stale_bucket[-1] <= cutoff:
+                    self.events.pop(stale_key, None)
         bucket = self.events[key]
         while bucket and bucket[0] <= now - window:
             bucket.popleft()
@@ -2646,6 +2820,48 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         )
         return json_response(result)
 
+    async def request_premium(request):
+        identity = request_identity(request, settings)
+        if not limiter.allow(f"premium-request:{identity.user_id}", 8):
+            raise QuestError("rate_limited", "Подожди минуту и попробуй снова.", 429)
+        body = await json_body(request, max_keys=2)
+        result = await service.request_premium(identity, str(body.get("request_id", "")))
+        participant = result.pop("participant")
+        claim = result.pop("notification_claim")
+        session_id = result.pop("session_id")
+        draft = (
+            "Здравствуйте! Я завершил квест BBBIKE в Красной Поляне и хочу получить "
+            f"Premium на 30 дней. Код участника: {participant['public_code']}."
+        )
+        notified = bool(result["data"].get("premium", {}).get("support_notified_at"))
+        if claim:
+            target: str | int = settings.support_chat_id
+            if re.fullmatch(r"-?\d+", settings.support_chat_id):
+                target = int(settings.support_chat_id)
+            username = f"@{participant['username']}" if participant["username"] else "без username"
+            message = (
+                "<b>Новая заявка BBBIKE Premium</b>\n\n"
+                f"Участник: {html.escape(participant['display_name'])}\n"
+                f"Telegram: {html.escape(username)} · <code>{participant['user_id']}</code>\n"
+                f"Код: <code>{html.escape(participant['public_code'])}</code>\n"
+                f"Завершение подтверждено · заявка {html.escape(participant['requested_at'])}"
+            )
+            try:
+                await bot.send_message(target, message)
+                notified = True
+            except Exception as exc:
+                log.warning("Не удалось отправить заявку Premium session=%s: %s", session_id, type(exc).__name__)
+                notified = False
+            await service.finish_premium_notification(session_id, claim, notified)
+            result["data"] = await service.state(identity)
+        support_pending = bool(result["data"].get("premium", {}).get("support_notification_pending"))
+        return json_response({
+            **result,
+            "support_notified": notified,
+            "support_pending": support_pending,
+            "support_url": "" if notified or support_pending else support_draft_url(settings.support_url, draft),
+        })
+
     async def admin_overview(request):
         require_admin(request, settings)
         return json_response({"data": await service.admin_overview()})
@@ -2714,7 +2930,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
     async def admin_delete_qr(request):
         admin = require_admin(request, settings)
         await service.delete_qr(admin.user_id, int(request.match_info["qr_id"]))
-        return json_response(await service.admin_overview())
+        return json_response({"data": await service.admin_overview()})
 
     async def admin_list_admins(request):
         require_admin(request, settings)
@@ -2754,8 +2970,20 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
 
     async def admin_premium(request):
         admin = require_admin(request, settings)
-        await service.mark_premium_issued(admin.user_id, request.match_info["session_id"])
-        return json_response({"data": await service.admin_overview()})
+        item = await service.mark_premium_issued(admin.user_id, request.match_info["session_id"])
+        notified = False
+        if item["newly_issued"]:
+            try:
+                await bot.send_message(
+                    item["user_id"],
+                    "<b>Premium BBBIKE подтверждён</b>\n\n"
+                    f"Заявка <code>{html.escape(item['public_code'])}</code> обработана. "
+                    "Если подписка не появилась, напиши в поддержку BBBIKE.",
+                )
+                notified = True
+            except Exception as exc:
+                log.warning("Не удалось уведомить о Premium user=%s: %s", item["user_id"], type(exc).__name__)
+        return json_response({"data": await service.admin_overview(), "notified": notified})
 
     async def admin_link_qr(request):
         admin = require_admin(request, settings)
@@ -2778,7 +3006,10 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         rows = await service.export_rows()
         output = io.StringIO()
         writer = csv.writer(output, delimiter=";")
-        writer.writerow(["Telegram ID", "Username", "Имя", "Старт", "Завершение", "Код", "Статус"])
+        writer.writerow([
+            "Telegram ID", "Username", "Имя", "Старт", "Завершение",
+            "Заявка Premium", "Код", "Статус", "Выдано",
+        ])
         for row in rows:
             writer.writerow([_csv_safe(row[key]) for key in row.keys()])
         body = "\ufeff" + output.getvalue()
@@ -2805,6 +3036,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
     app.router.add_post("/api/quest/event", event)
     app.router.add_post("/api/quest/scan", scan)
     app.router.add_post("/api/quest/rewards/{seq}/redeem", redeem_reward)
+    app.router.add_post("/api/quest/premium/request", request_premium)
     app.router.add_post("/api/admin/login", admin_login)
     app.router.add_post("/api/admin/logout", admin_logout)
     app.router.add_get("/api/admin/overview", admin_overview)

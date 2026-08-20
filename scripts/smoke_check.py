@@ -20,6 +20,7 @@ async def production_reward_scenario() -> None:
     """Проверяет именно запускаемый main.py, включая одноразовую выдачу."""
     with tempfile.TemporaryDirectory() as tmp:
         os.environ["DATA_DIR"] = tmp
+        os.environ["SUPPORT_CHAT_ID"] = ""
         settings = production.load_settings()
         db = production.Database(Path(tmp) / "production.db")
         await db.initialize()
@@ -62,6 +63,29 @@ async def production_reward_scenario() -> None:
                 assert exc.code == "reward_used"
             else:
                 raise AssertionError("reward was issued twice")
+            await service.scan(identity, codes[1], "production-scan-2")
+            completed_state = await service.scan(identity, codes[2], "production-scan-3")
+            assert completed_state["session"]["status"] == "completed"
+            assert completed_state["premium"]["requested_at"] is None
+            premium_id = "premium-smoke-request-0001"
+            requested = await service.request_premium(identity, premium_id)
+            assert requested["data"]["premium"]["requested_at"]
+            assert requested["notification_claim"] == ""
+            repeated_request = await service.request_premium(identity, premium_id)
+            assert repeated_request["data"]["premium"]["requested_at"] == requested["data"]["premium"]["requested_at"]
+            overview = await service.admin_overview()
+            assert overview["funnel"]["premium_pending"] == 1
+            row = next(p for p in overview["recent"] if p["id"] == completed_state["session"]["id"])
+            assert row["premium_requested_at"]
+            assert any(p["id"] == completed_state["session"]["id"] for p in overview["premium_requests"])
+            issued_premium = await service.mark_premium_issued(0, completed_state["session"]["id"])
+            assert issued_premium["newly_issued"] is True
+            repeated_issue = await service.mark_premium_issued(0, completed_state["session"]["id"])
+            assert repeated_issue["newly_issued"] is False
+            final_state = await service.state(identity)
+            assert final_state["premium"]["status"] == "issued" and final_state["premium"]["issued_at"]
+            final_overview = await service.admin_overview()
+            assert not any(p["id"] == completed_state["session"]["id"] for p in final_overview["premium_requests"])
             cookie = production.create_admin_session(settings, now=1_000)
             assert production.validate_admin_session(cookie, settings, now=1_001)
             assert not production.validate_admin_session(cookie + "x", settings, now=1_001)
@@ -143,6 +167,9 @@ async def main() -> None:
     assert "const proxy=`/tiles/${styleKey}/{z}/{x}/{y}.png`" in webapp
     assert "2gis.ru/directions/tab/" in webapp and "2gis.ru/routeSearch/rsType" not in webapp
     assert "reward_redeem_request_id" in production.SCHEMA
+    assert all(name in production.SCHEMA for name in ("requested_at", "support_notified_at", "support_notification_claim"))
+    draft = production.support_draft_url("https://t.me/bbbike_support", "Код KP-123")
+    assert draft.startswith("https://t.me/bbbike_support?text=") and "KP-123" in draft
     assert "glMap.setStyleById(next)" in webapp and "id=\"map-theme-toggle\"" in webapp
     assert "coverMapPreview" not in webapp and 'class="cover-map"' not in webapp
     assert ".map-tone-dark canvas" not in webapp
@@ -150,6 +177,8 @@ async def main() -> None:
     assert "if(compatAttempt>0){opts.webglVersion=1" in webapp
     assert "graphicsPreset:android?'light':'normal'" in webapp and "instance.on?.('idle'" in webapp
     assert "invalidtilekey|styleloaderror|webglcontextlost|context lost" in webapp
+    assert "routeLayer=null;routeSeq=null;renderRouteInfo(null)" in webapp
+    assert '.map-chip{width:44px;height:44px' in webapp
     assert production.DEFAULT_MAPGL_LIGHT_STYLE == "c080bb6a-8134-4993-93a1-5b4d8c36a59b"
     assert production.DEFAULT_MAPGL_DARK_STYLE == "9643e8da-173b-4359-9fee-8a1fe58e68aa"
     settings = load_settings()
@@ -160,5 +189,5 @@ async def main() -> None:
     assert validate_admin_ticket(ticket, settings, now=1_000 + settings.admin_ticket_ttl_sec + 1) is None
     for order in itertools.permutations(range(3)): await scenario(order)
     await production_reward_scenario()
-    print("PASS: persistence, maps, 6 point orders, QR idempotency, password session and one-time rewards")
+    print("PASS: persistence, maps, 6 point orders, QR idempotency, password session, one-time rewards and Premium workflow")
 if __name__ == "__main__": asyncio.run(main())

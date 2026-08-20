@@ -182,7 +182,10 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .premium-code,.reward-code{margin:13px 0;padding:14px;border:1px solid #57c94f58;border-radius:12px;background:#0b2112}
 .premium-code>span,.reward-code>span{color:#8daf90;font:650 9px/1 var(--mono);letter-spacing:.07em}
 .premium-code>strong{display:block;margin:9px 0;font:800 23px/1 var(--mono);letter-spacing:.06em}
-.premium-code button,.reward-code button{min-height:42px;border:0;background:transparent;color:var(--stamp);padding:0;display:flex;align-items:center;gap:7px;font-size:13px;font-weight:700}
+.premium-code button,.reward-code button{min-height:44px;border:0;background:transparent;color:var(--stamp);padding:0;display:flex;align-items:center;gap:7px;font-size:13px;font-weight:700}
+.premium-state{display:flex;align-items:flex-start;gap:10px;margin:12px 0;padding:13px;border:1px solid #72df6852;border-radius:12px;background:#102518;color:#d9f6dc;font-size:13px;line-height:1.45}
+.premium-state .ic{flex:none;color:var(--stamp)}
+.premium-state.issued{border-color:#83ff78;background:#17331e}
 .passport-cta{margin-top:12px}
 .support-link{text-decoration:none}
 
@@ -238,7 +241,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .cover-copy{margin:38px 0 18px}.cover-copy h1{max-width:365px;margin-bottom:12px;font-size:clamp(37px,10.7vw,48px);line-height:.96}.cover-copy>p:last-child{font-size:15px}
 .cover-stamps{gap:7px;margin-bottom:10px}.cover-stamps span{height:55px;gap:4px;border-color:#82ed4c68;color:#82ed4ca8}.cover-stamps b{font:800 16px/1 var(--mono)}.cover-stamps small{font:650 8px/1 var(--mono);text-transform:uppercase}
 .cover-facts{margin-bottom:10px;font-size:9px}.cover-facts span{padding-top:7px}
-.consent{margin:8px 1px 11px;font-size:11px}.cover-button{border-color:var(--green)!important;background:var(--green)!important;color:#071108!important}.text-button{min-height:40px}
+.consent{margin:8px 1px 11px;font-size:11px}.cover-button{border-color:var(--green)!important;background:var(--green)!important;color:#071108!important}.text-button{min-height:44px}
 
 /* Настоящая карта из данных CRM */
 .route-stage{position:relative;height:42dvh;min-height:330px;max-height:430px;overflow:hidden;margin:0 -14px;border-bottom:1px solid #78e34b43;background:#102c18}
@@ -276,17 +279,18 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .map-progress-pill b{font:800 15px/1 var(--font);color:var(--green)}
 .map-progress-pill span{font:600 11.5px/1.2 var(--font);color:#c3d1c6}
 .map-chip-row{display:flex;gap:6px;margin-left:auto}
-.map-chip{width:34px;height:34px;border-radius:11px;border:1px solid rgba(143,227,0,.25);
+.map-chip{width:44px;height:44px;border-radius:13px;border:1px solid rgba(143,227,0,.25);
   background:rgba(7,20,13,.86);backdrop-filter:blur(12px);color:#c3d1c6;
   font:800 13px/1 var(--font);display:grid;place-items:center}
 .map-chip.active{background:var(--green);color:#07110b;border-color:var(--green)}
 .map-chip.done{color:var(--green)}
-.map-theme-toggle{width:34px;height:34px;flex:0 0 34px;border-radius:11px;
+.map-theme-toggle{width:44px;height:44px;flex:0 0 44px;border-radius:13px;
   border:1px solid rgba(143,227,0,.25);background:rgba(7,20,13,.86);
   backdrop-filter:blur(12px);color:#dff7c4;display:grid;place-items:center;
   font:800 17px/1 var(--font);transition:transform .18s ease,background .18s ease}
 .map-theme-toggle:active{transform:scale(.92)}
 .map-theme-toggle[aria-busy="true"]{opacity:.55;pointer-events:none}
+@media(max-width:390px){.map-progress-pill{padding:9px 11px}.map-progress-pill span{display:none}.map-top{gap:6px}.map-chip-row{gap:4px}}
 .map-geo{position:absolute;z-index:520;right:12px;bottom:calc(var(--sheet-peek) + var(--tabbar-h) + env(safe-area-inset-bottom,0px) + 14px);
   height:44px;padding:0 15px;border-radius:14px;border:1px solid rgba(143,227,0,.34);
   background:rgba(7,20,13,.92);backdrop-filter:blur(12px);color:var(--green);
@@ -302,9 +306,9 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
   transition:bottom .38s cubic-bezier(.22,1,.36,1)}
 .route-info.show{display:flex}
 .route-info b{color:var(--green);font-weight:800}
-.route-info button{margin-left:4px;width:24px;height:24px;border-radius:50%;border:0;
+.route-info button{margin-left:2px;width:44px;height:44px;border-radius:50%;border:0;
   background:rgba(255,255,255,.1);color:#dff7c4;font-size:15px;line-height:1}
-.btn.ghost-link{min-height:42px;background:transparent;border:0;color:var(--muted);
+.btn.ghost-link{min-height:44px;background:transparent;border:0;color:var(--muted);
   font:600 13px/1 var(--font);text-decoration:underline;text-underline-offset:3px}
 
 /* Шторка. Два состояния: свёрнутая подсказка и раскрытая карточка.
@@ -466,10 +470,10 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .stamp-rail{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) 56px;gap:8px;padding:0 0 12px}
 .stamp-slot{height:58px;border-radius:13px;border:0;background:transparent;
   box-shadow:inset 0 0 0 1px #2c3e33;display:grid;place-items:center;gap:2px;
-  color:#3d5245;overflow:hidden;transition:box-shadow .2s,background-color .2s,transform .2s}
+  color:#93a596;overflow:hidden;transition:box-shadow .2s,background-color .2s,transform .2s}
 .stamp-slot>span{max-width:94%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   font:800 12px/1.15 Montserrat,var(--font);text-align:center;letter-spacing:-.01em}
-.stamp-slot small{font:700 8.5px/1 var(--font);letter-spacing:.1em}
+.stamp-slot small{font:700 10px/1 var(--font);letter-spacing:.08em}
 .stamp-slot.selected{background:rgba(143,227,0,.06);box-shadow:inset 0 0 0 1px rgba(143,227,0,.5);
   color:var(--stamp)}
 .stamp-slot.stamped{background:rgba(143,227,0,.1);box-shadow:inset 0 0 0 1px rgba(143,227,0,.5);
@@ -479,7 +483,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .stamp-slot.stamped:after{content:none}
 .stamp-total{display:grid;place-content:center;justify-items:center;gap:1px}
 .stamp-total b{font:900 17px/1 Montserrat,var(--font);color:var(--ink)}
-.stamp-total span{font:700 7.5px/1.15 var(--font);letter-spacing:.06em;
+.stamp-total span{font:700 9px/1.15 var(--font);letter-spacing:.04em;
   text-transform:uppercase;color:#6f8177;text-align:center}
 
 /* Прогресс поверх карты — как в макете */
@@ -585,7 +589,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
   background:var(--surface);box-shadow:inset 0 0 0 1px var(--line);text-align:center}
 .pf-stamp.on{background:rgba(143,227,0,.08);box-shadow:inset 0 0 0 1px rgba(143,227,0,.45);
   animation:q-pop .6s cubic-bezier(.2,1.5,.4,1) both}
-.pf-stamp b{font:900 19px/1 Montserrat,var(--font);color:#3d5245}
+.pf-stamp b{font:900 19px/1 Montserrat,var(--font);color:#93a596}
 .pf-stamp.on b{color:var(--green)}
 .pf-stamp span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   font:700 11px/1.2 var(--font);color:var(--ink)}
@@ -947,7 +951,7 @@ async function api(path,options={}){
   }finally{clearTimeout(timer)}
   const p=await r.json().catch(()=>({ok:false,message:'Сервис не ответил'}));
   if(r.status===401)throw new Error('Telegram не подтвердил вход. Закрой и открой квест заново');
-  if(!r.ok||p.ok===false)throw new Error(p.message||'Ошибка');
+  if(!r.ok||p.ok===false){const error=new Error(p.message||'Ошибка');error.code=p.code||'';error.status=r.status;throw error}
   setOffline(false);
   return p}
 
@@ -1276,6 +1280,8 @@ function stickyActions(p){if(p.completed_at)return `<div class="sticky-actions">
 /* Адрес поддержки приходит из настроек сервера (SUPPORT_URL), а не зашит в вёрстку. */
 const SUPPORT_FALLBACK='https://t.me/bb_bike';
 function supportUrl(){return state?.support_url||SUPPORT_FALLBACK}
+function premiumSupportUrl(){const base=state?.premium?.support_url||supportUrl(),text=`Здравствуйте! Я завершил квест BBBIKE в Красной Поляне и хочу получить Premium на 30 дней. Код участника: ${state?.premium?.public_code||''}.`;try{const url=new URL(base,location.origin);url.searchParams.set('text',text);return url.href}catch(_){return base+(base.includes('?')?'&':'?')+'text='+encodeURIComponent(text)}}
+async function copyText(value,success){if(!value)return toast('Нечего копировать');let copied=false;try{if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(value);copied=true}}catch(_){/* пробуем совместимый способ ниже */}if(!copied){const area=document.createElement('textarea');area.value=value;area.setAttribute('readonly','');area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.select();try{copied=!!document.execCommand('copy')}catch(_){copied=false}finally{area.remove()}}toast(copied?success:'Не удалось скопировать — удерживай код, чтобы выделить')}
 const ICONS={
   map:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5v-13L15 6.5 9 4Z"/><path d="M9 4v13M15 6.5v13"/></svg>',
   stamp:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 19h14M8 15a4 4 0 1 1 8 0v1H8v-1Z"/><rect x="6" y="16" width="12" height="3" rx="1"/></svg>',
@@ -1394,7 +1400,7 @@ function profileScreen(){
   </section>
 
   <section class="profile-list">
-    <button class="pf-row" onclick="rules()">
+    <button class="pf-row" onclick="rules('profile')">
       <span class="pf-ic">${icon('book')}</span>
       <span class="pf-tx"><b>Как играть</b><i>Правила квеста и три шага до штампа</i></span>
       <span class="pf-go">›</span></button>
@@ -1409,7 +1415,7 @@ function profileScreen(){
       <span class="pf-tx"><b>Мои подарки</b><i>Полученные штампы и промокоды</i></span>
       <span class="pf-go">›</span></button>
 
-    <button class="pf-row" onclick="oneLocation(event)">
+    <button class="pf-row" onclick="updateProfileLocation(event)">
       <span class="pf-ic">${icon('geo')}</span>
       <span class="pf-tx"><b>Обновить геопозицию</b><i>${localPosition?'Позиция получена':'Разовый запрос, без слежки'}</i></span>
       <span class="pf-go">›</span></button>
@@ -1467,12 +1473,14 @@ let pendingScan=startParam();
 
 async function applyPendingScan(){
   if(!pendingScan)return false;
-  const code=pendingScan;pendingScan='';
+  const code=pendingScan;
   try{
+    if(state?.scan_requires_geo&&!localPosition){toast('Для этого штампа нужна разовая геопозиция');const pos=await oneLocation();if(!pos){routeScreen(selectedSeq,false);toast('Разреши геопозицию и нажми «Где я» — QR сохранён');return false}localPosition=pos}
     const before=completed();
     const payload={qr_code:code,request_id:requestId()};
     if(state?.scan_requires_geo&&localPosition){payload.latitude=localPosition.lat;payload.longitude=localPosition.lon}
     state=(await api('/api/quest/scan',{method:'POST',body:JSON.stringify(payload)})).data;
+    pendingScan='';
     cacheState(state);
     const ev=state.event||{};
     if(completed()>before){
@@ -1482,7 +1490,7 @@ async function applyPendingScan(){
       setTimeout(()=>partnerScreen(ev.point_completed,true),1600);
       return true}
     if(ev.already_completed){toast('Эта точка уже отмечена');partnerScreen(ev.already_completed);return true}
-  }catch(x){toast(x.message)}
+  }catch(x){if(!offlineMode&&!['geo_required','too_far'].includes(x.code))pendingScan='';toast(x.message)}
   return false}
 
 function cover(){const pts=(state?.points||[]).slice(0,3);show(`<section class="passport-cover">
@@ -1510,7 +1518,7 @@ let routeLayer=null,routeSeq=null;
 function clearRoute(){
   if(routeLayer&&questMap){try{questMap.removeLayer(routeLayer)}catch(_){}}
   if(glRoute){try{glRoute.destroy()}catch(_){}glRoute=null}
-  routeLayer=null;routeSeq=null}
+  routeLayer=null;routeSeq=null;renderRouteInfo(null)}
 
 async function waitForMap(token,seq){
   for(let i=0;i<60;i++){
@@ -1762,6 +1770,7 @@ async function geoAndRoute(ev,seq){
         restore();return}
       clearTimeout(hint);
       localPosition=pos;
+      if(pendingScan){toast('Позиция получена — проверяю отсканированный QR');await applyPendingScan();return}
       pointOrder=[...openPoints()].sort((a,b)=>
         distance(pos.lat,pos.lon,a.latitude,a.longitude)-
         distance(pos.lat,pos.lon,b.latitude,b.longitude)).map(x=>x.seq);
@@ -1795,19 +1804,22 @@ async function nearest(){try{const pos=await oneLocation();if(!pos)return toast(
    показываются в метрах. */
 const GEO_TIMEOUT_MS=20000;
 function oneLocation(){return new Promise(resolve=>{let ended=false,browserStarted=false;const finish=v=>{if(!ended){ended=true;resolve(v)}},browser=()=>{if(ended||browserStarted)return;browserStarted=true;navigator.geolocation?navigator.geolocation.getCurrentPosition(v=>finish({lat:v.coords.latitude,lon:v.coords.longitude,accuracy:v.coords.accuracy}),()=>finish(null),{enableHighAccuracy:true,timeout:GEO_TIMEOUT_MS-1500,maximumAge:60000}):finish(null)};setTimeout(()=>finish(null),GEO_TIMEOUT_MS);const manager=tg?.LocationManager,supported=!!manager&&tg?.isVersionAtLeast?.('8.0')===true;if(!supported)return browser();const get=()=>{try{manager.getLocation(v=>v?finish({lat:v.latitude,lon:v.longitude}):browser())}catch(_){browser()}};try{manager.isInited?get():manager.init(get)}catch(_){browser()}})}
+async function updateProfileLocation(event){const button=event?.currentTarget;if(button)button.disabled=true;toast('Определяю позицию…');const pos=await oneLocation();if(!pos){if(button)button.disabled=false;return toast('Не удалось определить позицию. Проверь разрешение на геолокацию.')}localPosition=pos;pointOrder=[...openPoints()].sort((a,b)=>distance(pos.lat,pos.lon,a.latitude,a.longitude)-distance(pos.lat,pos.lon,b.latitude,b.longitude)).map(x=>x.seq);tg?.HapticFeedback?.notificationOccurred?.('success');if(pendingScan){toast('Позиция получена — проверяю отсканированный QR');await applyPendingScan();return}profileScreen();toast('Позиция обновлена и не отправлена на сервер')}
 function passportCard(p){const done=!!p.completed_at,status=p.reward_used?'Промокод использован':p.reward_available?'Промокод доступен · один раз':esc(p.address);return `<button class="passport-place ${done?'done':''} ${p.reward_used?'reward-used-card':''}" onclick="${done?`showReward(${p.seq})`:`selectPoint(${p.seq})`}"><div class="mini-stamp"><span>${done?esc(shortName(p)):p.seq}</span>${done?`<small>${p.reward_used?'ИСПОЛЬЗОВАН':completedTime(p.completed_at)+' · QR'}</small>`:'<small>БЕЗ ШТАМПА</small>'}</div><div><b>${esc(p.point_name)}</b><span>${status}</span></div>${icon('arrow')}</button>`}
-function passportScreen(lockMessage=''){sheetOpen=false;if(!lockMessage&&offlineMode)lockMessage='Нет связи. Статусы наград показаны из сохранённого квеста.';if(!lockMessage&&state?.campaign?.status!=='active')lockMessage='Квест сейчас на паузе. Полученные штампы и подарки сохранены.';if(!lockMessage&&state?.session?.status==='expired')lockMessage='Время маршрута закончилось. Полученные штампы и подарки сохранены.';const n=completed(),remaining=orderedPoints().find(p=>!p.completed_at),locked=!!lockMessage,canContinue=remaining&&!locked;show(`${header(`<span class="count-label">${n} / 3</span>${tabbar("passport")}`)}<section class="passport-page ${n===3?'complete':''}">${locked?`<div class="expired-note">${esc(lockMessage)}</div>`:''}<div class="passport-title">${n===3?'<div class="final-bb">BBBIKE</div>':''}<p class="micro">BBBIKE · КРАСНАЯ ПОЛЯНА</p><h1>${n===3?'Квест пройден':'Мой квест'}</h1><p>${n===3?'Все три штампа на месте. Premium готов к проверке.':'Три штампа партнёров · один месяц Premium'}</p></div><div class="reward-warning">Промокод каждого заведения можно получить только один раз. Открывай его рядом с сотрудником — после подтверждения он сразу станет использованным.</div><div class="passport-grid">${(state.points||[]).map(passportCard).join('')}</div><section class="premium-card ${n===3?'unlocked':''}"><img src="/static/bb-bike-logo.jpg" alt=""><div><b>${esc(state.campaign.premium_title)}</b><span>${n===3?'Подписка на 30 дней будет привязана после проверки администратором. '+esc(state.campaign.premium_instruction):`Откроется после ${3-n} ${3-n===1?'штампа':'штампов'}`}</span></div></section>${n===3?`<section class="premium-code"><span>КОД УЧАСТНИКА ДЛЯ ПРОВЕРКИ</span><strong>${esc(state.premium?.public_code||'Оформляется')}</strong><button onclick="copyPremium()">${icon('copy')} Скопировать</button></section>`:''}${canContinue?`<button class="btn primary passport-cta" onclick="selectPoint(${remaining.seq})">К точке «${esc(shortName(remaining))}»</button>`:n===3?'<button class="btn primary passport-cta" onclick="copyPremium()">Скопировать код для проверки</button>':`<a class="btn secondary passport-cta support-link" href="${esc(state.support_url)}">Связаться с поддержкой</a>`}${n===3?'<button class="btn secondary share-passport" onclick="sharePassport()">Поделиться результатом</button>':''}${!locked&&n<3?'<button class="btn quiet" onclick="routeScreen()">Вернуться к маршруту</button>':''}</section>`)}
+function premiumAction(){const p=state?.premium||{};if(p.status==='issued')return `<div class="premium-state issued">${icon('check')}<span><b>Premium подтверждён</b><br>Заявка обработана. Если подписка ещё не появилась, напиши в поддержку BBBIKE.</span></div><a class="btn secondary passport-cta support-link" href="${esc(supportUrl())}" target="_blank" rel="noopener">Связаться с поддержкой</a>`;if(p.requested_at){const sent=!!p.support_notified_at,pending=!!p.support_notification_pending,title=sent?'Заявка отправлена в BBBIKE':pending?'Заявка отправляется':'Заявка создана',copy=sent?'Команда проверит завершение и подключит 30 дней Premium.':pending?'Подожди немного — повторно отправлять ничего не нужно.':'Отправь готовое сообщение в поддержку, чтобы команда увидела заявку.';return `<div class="premium-state">${icon('check')}<span><b>${title}</b><br>${copy}</span></div>${sent||pending?'':`<a class="btn primary passport-cta support-link" href="${esc(premiumSupportUrl())}" target="_blank" rel="noopener">Открыть поддержку BBBIKE</a>`}`};return `<button class="btn primary passport-cta" onclick="requestPremium(event)">Получить Premium на 30 дней</button><p class="partner-note">После нажатия заявка уйдёт команде BBBIKE. Подписка привяжется после проверки прохождения.</p>`}
+function passportScreen(lockMessage=''){sheetOpen=false;if(!lockMessage&&offlineMode)lockMessage='Нет связи. Статусы наград показаны из сохранённого квеста.';if(!lockMessage&&state?.campaign?.status!=='active')lockMessage='Квест сейчас на паузе. Полученные штампы и подарки сохранены.';if(!lockMessage&&state?.session?.status==='expired')lockMessage='Время маршрута закончилось. Полученные штампы и подарки сохранены.';const n=completed(),remaining=orderedPoints().find(p=>!p.completed_at),locked=!!lockMessage,canContinue=remaining&&!locked;show(`${header(`<span class="count-label">${n} / 3</span>${tabbar("passport")}`)}<section class="passport-page ${n===3?'complete':''}">${locked?`<div class="expired-note">${esc(lockMessage)}</div>`:''}<div class="passport-title">${n===3?'<div class="final-bb">BBBIKE</div>':''}<p class="micro">BBBIKE · КРАСНАЯ ПОЛЯНА</p><h1>${n===3?'Квест пройден':'Мой квест'}</h1><p>${n===3?'Все три штампа на месте. Premium готов к заявке.':'Три штампа партнёров · один месяц Premium'}</p></div><div class="reward-warning">Промокод каждого заведения можно получить только один раз. Открывай его рядом с сотрудником — после подтверждения он сразу станет использованным.</div><div class="passport-grid">${(state.points||[]).map(passportCard).join('')}</div><section class="premium-card ${n===3?'unlocked':''}"><img src="/static/bb-bike-logo.jpg" alt=""><div><b>${esc(state.campaign.premium_title)}</b><span>${n===3?'Подписка на 30 дней будет привязана после проверки администратором. '+esc(state.campaign.premium_instruction):`Откроется после ${3-n} ${3-n===1?'штампа':'штампов'}`}</span></div></section>${n===3?`<section class="premium-code"><span>КОД УЧАСТНИКА ДЛЯ ПРОВЕРКИ</span><strong>${esc(state.premium?.public_code||'Оформляется')}</strong><button onclick="copyPremium()">${icon('copy')} Скопировать</button></section>`:''}${canContinue?`<button class="btn primary passport-cta" onclick="selectPoint(${remaining.seq})">К точке «${esc(shortName(remaining))}»</button>`:n===3?premiumAction():`<a class="btn secondary passport-cta support-link" href="${esc(state.support_url)}">Связаться с поддержкой</a>`}${n===3?'<button class="btn secondary share-passport" onclick="sharePassport()">Поделиться результатом</button>':''}${!locked&&n<3?'<button class="btn quiet" onclick="routeScreen()">Вернуться к маршруту</button>':''}</section>`)}
 function presentModal(html){modalTrigger=document.activeElement;modal.innerHTML=html;root.inert=true;root.setAttribute('aria-hidden','true');document.body.classList.add('modal-open');const sheet=modal.querySelector('.sheet'),title=sheet?.querySelector('h2')?.textContent?.trim();sheet?.setAttribute('role','dialog');sheet?.setAttribute('aria-modal','true');if(title)sheet?.setAttribute('aria-label',title);syncBackButton();setTimeout(()=>(modal.querySelector('input')||modal.querySelector('button'))?.focus(),0)}
 function chooseNavigator(seq){const p=pointBySeq(seq);selectedSeq=seq;presentModal(`<div class="modal" onclick="if(event.target===this)closeModal()"><section class="sheet"><div class="sheet-head"><div><p class="micro">КАК ДОБРАТЬСЯ</p><h2>${esc(p.point_name)}</h2></div><button class="icon-button" aria-label="Закрыть" onclick="closeModal()">×</button></div><p class="sheet-copy">Навигатор сам определит твоё текущее местоположение.</p><div class="navigator-list"><button onclick="openRoute(${seq},'yandex','bc')"><span class="provider yandex">Я</span><b>Яндекс · на велосипеде</b>${icon('arrow')}</button><button onclick="openRoute(${seq},'yandex','pd')"><span class="provider yandex">Я</span><b>Яндекс · пешком</b>${icon('arrow')}</button><button onclick="openRoute(${seq},'2gis','car')"><span class="provider dgis">2</span><b>2ГИС · на машине</b>${icon('arrow')}</button><button onclick="openRoute(${seq},'2gis','pedestrian')"><span class="provider dgis">2</span><b>2ГИС · пешком</b>${icon('arrow')}</button></div><button class="btn quiet" onclick="copyAddress(${seq})">Скопировать адрес</button></section></div>`)}
 function openRoute(seq,provider,mode){const p=pointBySeq(seq);eventLog('navigator_open',p.point_id,provider);const points=encodeURIComponent(`|${p.longitude},${p.latitude}`),url=provider==='yandex'?`https://yandex.ru/maps/?rtext=~${p.latitude},${p.longitude}&rtt=${mode}`:`https://2gis.ru/directions/tab/${mode==='pedestrian'?'pedestrian':'car'}/points/${points}`;closeModal();tg?.openLink?tg.openLink(url,{try_instant_view:false}):window.open(url,'_blank','noopener')}
-function copyAddress(seq){const p=pointBySeq(seq);navigator.clipboard?.writeText(p.address);toast('Адрес скопирован')}
+function copyAddress(seq){const p=pointBySeq(seq);copyText(p?.address||'','Адрес скопирован')}
 function scannerScreen(p){show(`${header(`<button class="icon-button" aria-label="Вернуться к маршруту" onclick="routeScreen(${p.seq},false)">${icon('back')}</button>`)}<section class="scanner-screen">${localDistance(p)!=null?`<span class="scan-chip">гео ок · ${fmt(localDistance(p))}</span>`:''}<div class="scanner-hint"><h1>Сканируй QR партнёра</h1><p>Наведи камеру на табличку у стойки «${esc(shortName(p))}». Отметка засчитается сразу.</p></div><div class="scanner-frame" aria-hidden="true"><i></i><i></i><i></i><i></i><span class="grid"></span><span class="beam"></span></div><div class="scanner-safety">Сначала полностью остановись и припаркуй байк</div><button class="btn primary" onclick="openNativeScanner(${p.seq})">${icon('scan')} Открыть камеру</button><button class="btn secondary" onclick="manualCode()">Ввести код вручную</button></section>`)}
 function openNativeScanner(seq){const p=pointBySeq(seq),supported=!!tg?.showScanQrPopup&&(typeof tg.isVersionAtLeast!=='function'||tg.isVersionAtLeast('6.4'));if(!supported)return manualCode();try{qrPopupOpen=true;tg.showScanQrPopup({text:'Наведи камеру на зелёную табличку BBBIKE'},value=>{qrPopupOpen=false;try{tg.closeScanQrPopup()}catch(_){/* popup may already be closed */}submitQr(value);return true})}catch(_){qrPopupOpen=false;manualCode()}}
 function scanPoint(seq){const p=pointBySeq(seq);selectedSeq=seq;eventLog('qr_open',p.point_id);scannerScreen(p);openNativeScanner(seq)}
-function manualCode(){presentModal(`<div class="modal" onclick="if(event.target===this)closeModal()"><section class="sheet"><div class="sheet-head"><div><p class="micro">РУЧНОЙ ВВОД</p><h2>Код точки</h2></div><button class="icon-button" aria-label="Закрыть" onclick="closeModal()">×</button></div><p class="sheet-copy">Введи короткий код с зелёной таблички BBBIKE.</p><label class="field">Код<input id="manual-code" autocomplete="off" autocapitalize="characters" maxlength="80" placeholder="Например: A1B2C3"></label><button class="btn primary" onclick="submitQr(document.getElementById('manual-code').value)">Поставить штамп</button></section></div>`)}
-async function submitQr(value){
+function manualCode(){presentModal(`<div class="modal" onclick="if(event.target===this)closeModal()"><section class="sheet"><div class="sheet-head"><div><p class="micro">РУЧНОЙ ВВОД</p><h2>Код точки</h2></div><button class="icon-button" aria-label="Закрыть" onclick="closeModal()">×</button></div><p class="sheet-copy">Введи короткий код с зелёной таблички BBBIKE.</p><form onsubmit="submitQr(document.getElementById('manual-code').value,event)"><label class="field">Код<input id="manual-code" autocomplete="off" autocapitalize="characters" maxlength="80" placeholder="Например: A1B2C3" required></label><button class="btn primary">Поставить штамп</button></form></section></div>`)}
+async function submitQr(value,event){
+  event?.preventDefault?.();const submit=event?.submitter||modal.querySelector('form .btn.primary');if(submit)submit.disabled=true;
   value=questCodeFrom(value);
-  if(!value)return toast('Код не распознан');
+  if(!value){if(submit)submit.disabled=false;document.getElementById('manual-code')?.focus();return toast('Код не распознан')}
   try{
     const before=completed();
     const payload={qr_code:value,request_id:requestId()};
@@ -1825,7 +1837,7 @@ async function submitQr(value){
       return showReward(ev.already_completed);
     }
     routeScreen();
-  }catch(x){tg?.HapticFeedback?.notificationOccurred?.('error');toast(x.message)}}
+  }catch(x){if(submit)submit.disabled=false;const input=document.getElementById('manual-code');input?.focus();input?.select();tg?.HapticFeedback?.notificationOccurred?.('error');toast(x.message)}}
 function stampSuccess(seq){const p=pointBySeq(seq),n=completed();show(`${header(`<span class="count-label">${n} ${n===1?'штамп':'штампа'}</span>`)}<section class="stamp-screen"><div class="stamp-seal-wrap"><div class="stamp-seal"><span class="city">КРАСНАЯ ПОЛЯНА</span><span class="name">${esc(shortName(p))}</span><span class="meta">${completedTime(p.completed_at)} · ${state?.scan_requires_geo?'ГЕО + QR':'QR'}</span></div></div><h1>${n===3?'Квест пройден':'Отметка засчитана'}</h1><p class="lead">${n===3?'Все три точки пройдены. Premium будет привязан после проверки.':n===2?'Остался один — и квест закрыт.':`Подарок сохранён. До Premium — ${3-n} отметки.`}</p><div class="reward-warning">Промокод сохранён в квесте. Он откроется только один раз — показывай его сотруднику заведения.</div>${stampRail(seq)}<button class="btn primary stamp-next" onclick="${n===3?'passportScreen()':'selectPoint(orderedPoints().find(p=>!p.completed_at)?.seq)'}">${n===3?'Открыть мой квест':'Выбрать следующий штамп'}</button></section>`);tg?.HapticFeedback?.notificationOccurred('success')}
 function showReward(seq){const p=pointBySeq(seq);if(!p)return passportScreen();const used=!!p.reward_used;show(`${header(`<button class="icon-button" aria-label="Вернуться к квесту" onclick="passportScreen()">${icon('back')}</button>`)}<section class="saved-reward"><div class="stamp-seal small"><span>ПОДАРОК ПАРТНЁРА</span><strong>${esc(shortName(p))}</strong><small>${used?'ИСПОЛЬЗОВАН':completedTime(p.completed_at)+' · QR'}</small></div><p class="micro">${used?'ПРОМОКОД ИСПОЛЬЗОВАН':'СОХРАНЕНО В КВЕСТЕ'}</p><h1>${esc(p.reward_title)}</h1><p>${esc(p.reward_text)}</p>${used?'<div class="reward-warning">Этот промокод уже был показан и больше не откроется.</div>':'<div class="reward-warning">Код можно увидеть только один раз. Перед нажатием позови сотрудника заведения.</div><button class="btn primary" onclick="prepareReward('+p.seq+')">Показать сотруднику</button>'}<button class="btn secondary" onclick="passportScreen()">Вернуться к квесту</button></section>`)}
 function prepareReward(seq){const p=pointBySeq(seq);if(!p||p.reward_used)return showReward(seq);presentModal(`<div class="modal" onclick="if(event.target===this)closeModal()"><section class="sheet"><div class="sheet-head"><div><p class="micro">ОДНОРАЗОВЫЙ ПРОМОКОД</p><h2>Сотрудник рядом?</h2></div><button class="icon-button" aria-label="Закрыть" onclick="closeModal()">×</button></div><p class="sheet-copy">После подтверждения код появится только на этом экране и сразу будет отмечен использованным. Повторно открыть его нельзя.</p><button class="btn primary" onclick="redeemReward(${seq})">Да, показать код</button><button class="btn quiet" onclick="closeModal()">Пока не открывать</button></section></div>`)}
@@ -1834,7 +1846,10 @@ function rewardRequestId(seq){const key=rewardRequestKey(seq);try{const saved=lo
 function clearRewardRequest(seq){try{localStorage.removeItem(rewardRequestKey(seq))}catch(_){}}
 async function redeemReward(seq){const button=modal.querySelector('.btn.primary');if(button)button.disabled=true;const id=rewardRequestId(seq);try{const result=await api('/api/quest/rewards/'+seq+'/redeem',{method:'POST',body:JSON.stringify({request_id:id})});state=result.data;cacheState(state);clearRewardRequest(seq);closeModal();showOneTimeReward(result.reward)}catch(x){if(button)button.disabled=false;toast(x.message);if(x.message.includes('использован')){clearRewardRequest(seq);await refresh({silent:true});showReward(seq)}}}
 function showOneTimeReward(reward){show(`${header(`<span class="count-label">ОДИН РАЗ</span>`)}<section class="saved-reward"><div class="stamp-seal small"><span>ПОДТВЕРЖДЕНО</span><strong>${esc(shortName({point_name:reward.point_name}))}</strong><small>ИСПОЛЬЗОВАН</small></div><p class="micro">ПОКАЖИ СОТРУДНИКУ СЕЙЧАС</p><h1>${esc(reward.reward_title)}</h1><div class="one-time-code"><span>ОДНОРАЗОВЫЙ ПРОМОКОД</span><strong>${esc(reward.code)}</strong></div><div class="reward-warning">После ухода с этого экрана код больше не показывается.</div><button class="btn primary" onclick="passportScreen()">Готово</button></section>`);tg?.HapticFeedback?.notificationOccurred?.('success')}
-function copyPremium(){const code=state?.premium?.public_code||'';navigator.clipboard?.writeText(code);toast(code?'Premium скопирован':'Premium ещё оформляется')}
+function premiumRequestKey(){return `bbq-premium-request:${state?.session?.id||'session'}`}
+function premiumRequestId(){const key=premiumRequestKey();try{const saved=localStorage.getItem(key);if(saved)return saved;const id=requestId();localStorage.setItem(key,id);return id}catch(_){return requestId()}}
+async function requestPremium(event){if(offlineMode)return toast('Для отправки заявки нужен интернет');const button=event?.currentTarget;if(button){button.disabled=true;button.textContent='Отправляем заявку…'}try{const result=await api('/api/quest/premium/request',{method:'POST',body:JSON.stringify({request_id:premiumRequestId()})});state=result.data;if(result.support_url&&state?.premium)state.premium.support_url=result.support_url;cacheState(state);tg?.HapticFeedback?.notificationOccurred?.('success');passportScreen();toast(result.support_notified?'Заявка отправлена команде BBBIKE':result.support_pending?'Заявка принята и отправляется':'Заявка создана — отправь сообщение в поддержку')}catch(x){if(button){button.disabled=false;button.textContent='Получить Premium на 30 дней'}toast(x.message)}}
+function copyPremium(){copyText(state?.premium?.public_code||'','Код Premium скопирован')}
 function sharePassport(){const text='Я собрал все 3 штампа в квесте BBBIKE по Красной Поляне. Присоединяйся!';
   /* Ссылка ведёт прямо в мини-апп бота: раньше шарился голый домен,
      и друг попадал на лендинг вместо квеста. */
@@ -1853,7 +1868,8 @@ function handleBack(){if(modal.innerHTML)return closeModal();if(sheetOpen&&root.
    Внутри сеанса переходы по вкладкам инструкцию не повторяют. */
 let rulesShown=false;
 
-function rules(next){rulesShown=true;const r=(state?.points?.[0]?.radius_m)||100,geo=!!state?.scan_requires_geo;show(`${header(`<button class="icon-button" aria-label="Назад" onclick="closeRules()">${icon('back')}</button>`)}
+let rulesReturn='';
+function rules(next=''){rulesShown=true;rulesReturn=next;const r=(state?.points?.[0]?.radius_m)||100,geo=!!state?.scan_requires_geo;show(`${header(`<button class="icon-button" aria-label="Назад" onclick="closeRules()">${icon('back')}</button>`)}
 <section class="rules-screen">
   <p class="rules-eyebrow">Как проходит квест</p>
   <h1 class="rules-title">Три правила</h1>
@@ -1882,13 +1898,15 @@ function rules(next){rulesShown=true;const r=(state?.points?.[0]?.radius_m)||100
 
   <div class="rules-safety">${icon('shield')}<p>Во время поездки следи за дорогой. Телефон — только после полной остановки.</p></div>
 
-  <button class="btn primary rules-btn" onclick="closeRules()"><span>${state?.session?'Понятно, к карте':'Понятно, к началу'}</span></button>
+  <button class="btn primary rules-btn" onclick="closeRules()"><span>${next==='profile'?'Понятно, назад':state?.session?(completed()===3?'Понятно, к квесту':'Понятно, к карте'):'Понятно, к началу'}</span></button>
 </section>`)}
 function emptyState(title,text,action='refresh()'){show(`${header()}<section class="empty"><div class="empty-stamp">BBBIKE</div><h1>${esc(title)}</h1><p>${esc(text)}</p><button class="btn secondary" onclick="${action}">Проверить снова</button></section>`)}
 /* Выход из инструкции: если квест уже начат — на карту,
    если ещё нет — обратно на приветственный экран. */
 function closeRules(){
   rulesShown=true;
+  const target=rulesReturn;rulesReturn='';
+  if(target==='profile')return profileScreen();
   if(!state?.session) return cover();
   return completed()===3?passportScreen():routeScreen();
 }

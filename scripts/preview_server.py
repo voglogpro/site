@@ -17,8 +17,16 @@ from main import Database, QuestService, create_web_app, load_settings
 
 
 class PreviewBot:
+    def __init__(self):
+        self.sent_messages: list[tuple[object, str]] = []
+
     async def get_me(self):
         return type("PreviewUser", (), {"username": "bibibike_quest_preview_bot"})()
+
+    async def send_message(self, chat_id, text, **_kwargs):
+        # Keep live preview deterministic and never contact real Telegram.
+        self.sent_messages.append((chat_id, text))
+        return type("PreviewMessage", (), {"message_id": len(self.sent_messages)})()
 
 
 async def main() -> None:

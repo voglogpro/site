@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS campaigns (
     status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','active','paused','ended')),
     session_duration_min INTEGER NOT NULL DEFAULT 240 CHECK(session_duration_min BETWEEN 30 AND 1440),
     premium_title TEXT NOT NULL DEFAULT 'Premium BBBIKE на 30 дней',
-    premium_instruction TEXT NOT NULL DEFAULT 'Покажи этот экран администратору. Премиум будет оформлен вручную.',
+    premium_instruction TEXT NOT NULL DEFAULT 'Нажми «Получить Premium». Команда BBBIKE проверит квест и подключит подписку на 30 дней.',
     starts_at TEXT,
     ends_at TEXT,
     created_at TEXT NOT NULL,
@@ -204,6 +204,11 @@ class Database:
         await self._db.execute("UPDATE sessions SET status='active' WHERE status='awaiting_location'")
         await self._db.execute(
             "INSERT INTO schema_meta(key,value) VALUES('version','2') ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        )
+        await self._db.execute(
+            """UPDATE campaigns
+               SET premium_instruction='Нажми «Получить Premium». Команда BBBIKE проверит квест и подключит подписку на 30 дней.'
+               WHERE premium_instruction='Покажи этот экран администратору. Премиум будет оформлен вручную.'"""
         )
         await self._db.commit()
         check = await (await self._db.execute("PRAGMA quick_check")).fetchone()
