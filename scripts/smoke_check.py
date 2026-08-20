@@ -8,10 +8,55 @@ os.environ.setdefault("BOT_TOKEN", "000000:development-token")
 os.environ.setdefault("WEBAPP_URL", "http://127.0.0.1:3000")
 os.environ.setdefault("ADMIN_IDS", "7785586524")
 os.environ.setdefault("QR_SECRET", "development-only-qr-secret-32-chars")
+os.environ.setdefault("ADMIN_PASSWORD", "development-admin-password")
 from quest.config import load_settings
 from quest.db import Database
 from quest.security import TelegramIdentity, create_admin_ticket, validate_admin_ticket
 from quest.service import QuestError, QuestService
+import main as production
+
+
+async def production_reward_scenario() -> None:
+    """Проверяет именно запускаемый main.py, включая одноразовую выдачу."""
+    with tempfile.TemporaryDirectory() as tmp:
+        os.environ["DATA_DIR"] = tmp
+        settings = production.load_settings()
+        db = production.Database(Path(tmp) / "production.db")
+        await db.initialize()
+        try:
+            service = production.QuestService(db, settings)
+            await service.ensure_demo_campaign()
+            identity = production.TelegramIdentity(settings.dev_user_id, "smoke", "Тест", "", "ru")
+            overview = await service.admin_overview()
+            codes = []
+            for point in overview["points"]:
+                await service.admin_update_point(0, point["id"], {
+                    "name": f"Точка {point['seq']}", "address": f"Адрес {point['seq']}",
+                    "latitude": point["latitude"], "longitude": point["longitude"], "radius_m": 100,
+                    "reward_title": f"Подарок {point['seq']}", "reward_text": "Smoke",
+                    "partner_hours": "09:00–21:00", "description": "Тестовая точка", "photo_url": "",
+                })
+                codes.append(await service.rotate_qr(0, point["id"]))
+            await service.admin_update_campaign(0, {"status": "active", "session_duration_min": 240})
+            await service.start(identity, True)
+            state = await service.scan(identity, codes[0], "production-scan")
+            reward = state["points"][0]
+            assert "reward_code" not in reward and reward["reward_available"] and not reward["reward_used"]
+            issued = await service.redeem_reward(identity, 1)
+            assert issued["reward"]["code"].startswith("BB-")
+            used = issued["data"]["points"][0]
+            assert "reward_code" not in used and used["reward_used"] and not used["reward_available"]
+            try:
+                await service.redeem_reward(identity, 1)
+            except production.QuestError as exc:
+                assert exc.code == "reward_used"
+            else:
+                raise AssertionError("reward was issued twice")
+            cookie = production.create_admin_session(settings, now=1_000)
+            assert production.validate_admin_session(cookie, settings, now=1_001)
+            assert not production.validate_admin_session(cookie + "x", settings, now=1_001)
+        finally:
+            await db.close()
 
 async def scenario(order: tuple[int, ...]) -> None:
     with tempfile.TemporaryDirectory() as tmp:
@@ -90,5 +135,6 @@ async def main() -> None:
     assert validate_admin_ticket(ticket + "x", settings, now=1_001) is None
     assert validate_admin_ticket(ticket, settings, now=1_000 + settings.admin_ticket_ttl_sec + 1) is None
     for order in itertools.permutations(range(3)): await scenario(order)
-    print("PASS: persistence restart, resume, maps, admin ticket, 6 point orders, QR idempotency and one premium")
+    await production_reward_scenario()
+    print("PASS: persistence, maps, 6 point orders, QR idempotency, password session and one-time rewards")
 if __name__ == "__main__": asyncio.run(main())

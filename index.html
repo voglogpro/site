@@ -318,7 +318,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
   background:linear-gradient(180deg,#0e2415 0%,#08170e 100%);
   border-radius:26px 26px 0 0;border:1px solid rgba(143,227,0,.22);border-bottom:0;
   box-shadow:0 -16px 44px rgba(0,0,0,.5);
-  max-height:calc(86vh - var(--tabbar-h));display:flex;flex-direction:column;
+  max-height:calc(100dvh - var(--tabbar-h) - env(safe-area-inset-top,0px) - 10px);display:flex;flex-direction:column;
   transform:translateY(calc(100% - var(--sheet-peek)));
   transition:transform .42s cubic-bezier(.22,1,.36,1)}
 .loc-sheet.open{transform:translateY(0)}
@@ -878,13 +878,18 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .partners-head p{margin:0;color:var(--muted);font-size:14px;line-height:1.45}
 .partner-list{display:grid;gap:12px;padding:6px 0 96px}
 .partner-card{width:100%;text-align:left;border:1px solid var(--line);border-radius:18px;
-  background:var(--surface);padding:15px 16px;display:grid;gap:9px;color:var(--ink)}
+  position:relative;overflow:hidden;background:var(--surface);padding:15px 16px;display:grid;gap:9px;color:var(--ink)}
 .partner-card.visited{border-color:rgba(143,227,0,.42);background:rgba(143,227,0,.06)}
+.partner-card.visited::after{content:"ПОЛУЧЕНО";position:absolute;right:-25px;bottom:18px;width:132px;padding:6px 0;border:2px solid rgba(143,227,0,.56);color:rgba(168,238,47,.72);font:900 10px/1 var(--mono);letter-spacing:.14em;text-align:center;transform:rotate(-18deg);pointer-events:none;animation:partner-stamp .5s cubic-bezier(.2,1.45,.4,1) both}
+.partner-card.used::after{content:"ИСПОЛЬЗОВАНО";border-color:rgba(255,255,255,.3);color:rgba(255,255,255,.48)}
+@keyframes partner-stamp{from{opacity:0;transform:rotate(-18deg) scale(1.55)}to{opacity:1;transform:rotate(-18deg) scale(1)}}
 .partner-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
 .partner-top b{font-size:17px;line-height:1.2;letter-spacing:-.02em}
 .partner-flag{flex:none;padding:5px 9px;border-radius:999px;font:700 10px/1 var(--mono);
   letter-spacing:.05em;text-transform:uppercase;background:rgba(143,227,0,.14);color:var(--green)}
 .partner-flag.pending{background:rgba(255,255,255,.06);color:var(--muted)}
+.partner-flag.ready{background:rgba(143,227,0,.18);color:var(--green)}
+.partner-flag.used{background:rgba(255,255,255,.08);color:#9aa79d}
 .partner-offer{display:flex;gap:9px;align-items:flex-start;padding:11px 12px;border-radius:13px;
   background:var(--raised);border:1px dashed rgba(143,227,0,.35)}
 .partner-offer b{display:block;color:var(--green);font-size:14px;line-height:1.25}
@@ -904,6 +909,8 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
   border:1px solid rgba(61,139,253,.28);color:#cfe0ff;font-size:13px;line-height:1.45}
 .scan-banner{margin:0 0 14px;padding:13px 15px;border-radius:14px;background:rgba(143,227,0,.10);
   border:1px solid rgba(143,227,0,.4);color:#dff7c4;font-size:13.5px;line-height:1.45}
+.reward-warning{margin:12px 0;padding:12px 14px;border:1px solid rgba(255,190,60,.4);border-radius:13px;background:rgba(255,190,60,.08);color:#ffdf98;font-size:13px;line-height:1.45}
+.one-time-code{margin:22px 0;padding:22px 16px;border:2px dashed var(--green);border-radius:18px;background:#0b2112;text-align:center}.one-time-code span{display:block;margin-bottom:10px;color:#a9bbad;font:700 10px/1 var(--mono);letter-spacing:.1em}.one-time-code strong{font:900 30px/1 var(--mono);letter-spacing:.08em;color:#efffdc}.reward-used-card{opacity:.72;filter:saturate(.65)}
 </style>
   <link rel="stylesheet" href="/static/vendor/leaflet.css">
   <script src="https://telegram.org/js/telegram-web-app.js" onerror="window.__tgSdkFailed=1"></script>
@@ -941,12 +948,12 @@ async function api(path,options={}){
 
 /* Паспорт и промокоды должны открываться даже без сети: человек уже
    заработал подарок и показывает его на кассе, где связи может не быть. */
-const CACHE_KEY='bbq-state-v2';
+const CACHE_KEY='bbq-state-v3';
 function cacheState(value){try{localStorage.setItem(CACHE_KEY,JSON.stringify({at:Date.now(),data:value}))}catch(_){/* приватный режим */}}
 function cachedState(){try{const raw=localStorage.getItem(CACHE_KEY);if(!raw)return null;const parsed=JSON.parse(raw);return parsed?.data||null}catch(_){return null}}
 function eventLog(event_type,point_id=null,navigator=''){api('/api/quest/event',{method:'POST',keepalive:true,body:JSON.stringify({event_type,point_id,navigator,request_id:requestId()})}).catch(()=>{})}
 function toast(text){const n=document.getElementById('toast');n.textContent=text;n.classList.remove('hidden');clearTimeout(n._t);n._t=setTimeout(()=>n.classList.add('hidden'),3200)}
-function destroyQuestMap(){if(questMap){questMap.remove();questMap=null}}
+function destroyQuestMap(){if(questMap){questMap.remove();questMap=null}if(glRoute){try{glRoute.destroy()}catch(_){}glRoute=null}routeLayer=null;routeSeq=null;if(glMap){try{glMap.destroy()}catch(_){}glMap=null;glClear()}}
 function show(html){destroyQuestMap();root.innerHTML=html;window.scrollTo({top:0,behavior:'instant'});setTimeout(syncBackButton,0)}
 function completed(){return (state?.points||[]).filter(p=>p.completed_at).length}
 function pointBySeq(seq){return state?.points?.find(p=>p.seq===Number(seq))}
@@ -1048,7 +1055,7 @@ function mountTiles(node,area){
    отсюда плавный зум и наклон. Запасной — прежняя растровая карта:
    она включается сама, если ключ не задан или библиотека не загрузилась,
    поэтому неудачное подключение не оставит гостя без карты. */
-let glMap=null,glMarkers=[],glRoute=null,glUser=null,mapEngine='raster';
+let glMap=null,glMarkers=[],glRoute=null,glUser=null,mapEngine='raster',rasterMarkers=new Map();
 
 /* Подпись правообладателей карты. На картах 2ГИС по договорённости
    выводится «BB & 2ГИС», на запасной растровой — источник OpenStreetMap. */
@@ -1056,7 +1063,10 @@ function mapAttribution(){
   return mapEngine==='mapgl'?'BB & 2ГИС':(state?.map?.attribution||'© OpenStreetMap')}
 
 function mapglKey(){return state?.map?.mapgl_key||''}
-function useMapgl(){return !!mapglKey()&&!!window.mapgl}
+function mapglStyle(){return state?.map?.mapgl_style||''}
+// Без ночного style ID не включаем светлую карту 2ГИС: локальный
+// растровый fallback уже тёмный и лучше соответствует интерфейсу.
+function useMapgl(){return !!mapglKey()&&!!mapglStyle()&&!!window.mapgl}
 
 function loadMapgl(done){
   if(window.mapgl||window.__mapglFailed)return done();
@@ -1066,7 +1076,7 @@ function loadMapgl(done){
   const el=document.createElement('script');
   el.src='https://mapgl.2gis.com/api/js/v1';
   el.async=true;
-  el.onload=finish;
+  el.onload=()=>{try{if(typeof window.mapgl?.isSupported==='function'&&!window.mapgl.isSupported())window.__mapglFailed=true}catch(_){window.__mapglFailed=true}finish()};
   el.onerror=()=>{window.__mapglFailed=true;finish()};
   document.head.appendChild(el);
   // Если библиотека молчит, не держим человека перед пустым экраном.
@@ -1100,6 +1110,14 @@ function initGlMap(node,p){
       pitch:32,maxZoom:19,minZoom:10};
     if(state?.map?.mapgl_style)opts.style=state.map.mapgl_style;
     glMap=new mapgl.Map(node,opts);
+    let styleReady=false;
+    const fallback=()=>{
+      if(styleReady||!document.body.contains(node)||mapEngine!=='mapgl')return;
+      window.__mapglFailed=true;mapEngine='raster';
+      try{glMap?.destroy()}catch(_){}glMap=null;glClear();node.innerHTML='';initRasterMap(node,p)};
+    glMap.on?.('styleload',()=>{styleReady=true;node.classList.add('map-ready')});
+    glMap.on?.('styleloaderror',fallback);
+    setTimeout(fallback,8000);
     (state?.points||[]).forEach(point=>{
       const marker=new mapgl.Marker(glMap,{
         coordinates:[point.longitude,point.latitude],
@@ -1108,6 +1126,7 @@ function initGlMap(node,p){
         label:{text:shortName(point),offset:[0,10],relativeAnchor:[0.5,0],
                fontSize:13,color:'#eaf5ea',haloColor:'#07110b',haloRadius:2}});
       marker.on('click',()=>{sheetOpen=true;selectPoint(point.seq)});
+      marker.__seq=point.seq;
       glMarkers.push(marker)});
     if(localPosition){
       glUser=new mapgl.Marker(glMap,{coordinates:[localPosition.lon,localPosition.lat],
@@ -1137,14 +1156,14 @@ function glFitAll(p){
 function initUserMap(p){
   const node=document.getElementById('quest-map');
   if(!node)return;
-  if(mapglKey()&&!window.mapgl&&!window.__mapglFailed){
+  if(mapglKey()&&mapglStyle()&&!window.mapgl&&!window.__mapglFailed){
     // Библиотека подгружается один раз, дальше карта строится сразу.
     loadMapgl(()=>initUserMap(p));
     return}
   if(useMapgl())return initGlMap(node,p);
   return initRasterMap(node,p)}
 
-function initRasterMap(node,p){const n=document.getElementById('quest-map');if(!n)return;if(!window.L){n.innerHTML='<div class="user-map-fallback"><b>Карта не загрузилась</b><span>Маршрут всё равно откроется в Яндекс Картах или 2ГИС.</span></div>';return}const raw=state?.map?.bounds||{south:43.60,west:40.10,north:43.77,east:40.37},area=L.latLngBounds([raw.south,raw.west],[raw.north,raw.east]);questMap=L.map(n,{zoomControl:false,attributionControl:false,preferCanvas:true,maxBounds:area,maxBoundsViscosity:1,minZoom:10,maxZoom:18,scrollWheelZoom:false,boxZoom:false});mountTiles(n,area);const pointCoords=[];(state?.points||[]).forEach(point=>{const coords=[point.latitude,point.longitude];pointCoords.push(coords);if(state?.scan_requires_geo&&!point.completed_at){L.circle(coords,{radius:point.radius_m||100,color:'#8fe300',weight:1,opacity:.55,fillColor:'#8fe300',fillOpacity:.08,interactive:false}).addTo(questMap)}const m=L.marker(coords,{icon:pointMarkerIcon(point),keyboard:true,title:point.point_name}).addTo(questMap);m.getElement()?.setAttribute('aria-label',`${point.seq}. ${point.point_name}`);m.on('click',()=>{sheetOpen=true;selectPoint(point.seq)})});const target=[p.latitude,p.longitude],visible=[...pointCoords];if(localPosition){const userCoords=[localPosition.lat,localPosition.lon],inside=area.contains(userCoords);L.marker(userCoords,{icon:L.divIcon({className:'bb-user-marker-wrap',html:'<span class="bb-user-marker"><i></i></span>',iconSize:[34,34],iconAnchor:[17,17]}),interactive:false}).addTo(questMap);if(inside){visible.push(userCoords);if(localDistance(p)<30000)L.polyline([userCoords,target],{color:'#83ed36',weight:3,dashArray:'7 8',opacity:.8}).addTo(questMap)}}const bottomPad=Math.round(window.innerHeight*(sheetOpen?0.5:0.22))+40;if(visible.length>1)questMap.fitBounds(visible,{paddingTopLeft:[46,96],paddingBottomRight:[46,bottomPad],maxZoom:15});else questMap.setView(target,15);/* Карта создаётся до того, как браузер закончил раскладку полноэкранного
+function initRasterMap(node,p){const n=document.getElementById('quest-map');if(!n)return;if(!window.L){n.innerHTML='<div class="user-map-fallback"><b>Карта не загрузилась</b><span>Маршрут всё равно откроется в Яндекс Картах или 2ГИС.</span></div>';return}const raw=state?.map?.bounds||{south:43.60,west:40.10,north:43.77,east:40.37},area=L.latLngBounds([raw.south,raw.west],[raw.north,raw.east]);questMap=L.map(n,{zoomControl:false,attributionControl:false,preferCanvas:true,maxBounds:area,maxBoundsViscosity:1,minZoom:10,maxZoom:18,scrollWheelZoom:false,boxZoom:false,fadeAnimation:false,zoomAnimation:true,markerZoomAnimation:true});rasterMarkers=new Map();mountTiles(n,area);const pointCoords=[];(state?.points||[]).forEach(point=>{const coords=[point.latitude,point.longitude];pointCoords.push(coords);if(state?.scan_requires_geo&&!point.completed_at){L.circle(coords,{radius:point.radius_m||100,color:'#8fe300',weight:1,opacity:.55,fillColor:'#8fe300',fillOpacity:.08,interactive:false}).addTo(questMap)}const m=L.marker(coords,{icon:pointMarkerIcon(point),keyboard:true,title:point.point_name,riseOnHover:true}).addTo(questMap);rasterMarkers.set(point.seq,m);m.getElement()?.setAttribute('aria-label',`${point.seq}. ${point.point_name}`);m.on('click',()=>{sheetOpen=true;selectPoint(point.seq)})});const target=[p.latitude,p.longitude],visible=[...pointCoords];if(localPosition){const userCoords=[localPosition.lat,localPosition.lon],inside=area.contains(userCoords);L.marker(userCoords,{icon:L.divIcon({className:'bb-user-marker-wrap',html:'<span class="bb-user-marker"><i></i></span>',iconSize:[34,34],iconAnchor:[17,17]}),interactive:false}).addTo(questMap);if(inside){visible.push(userCoords);if(localDistance(p)<30000)L.polyline([userCoords,target],{color:'#83ed36',weight:3,dashArray:'7 8',opacity:.8}).addTo(questMap)}}const bottomPad=Math.round(window.innerHeight*(sheetOpen?0.5:0.22))+40;if(visible.length>1)questMap.fitBounds(visible,{paddingTopLeft:[46,96],paddingBottomRight:[46,bottomPad],maxZoom:15});else questMap.setView(target,15);/* Карта создаётся до того, как браузер закончил раскладку полноэкранного
    экрана, и слой линий успевает посчитать себе нулевой размер — маршрут
    и пунктир до участника оказывались за пределами видимой области.
    Пересчитываем размер после раскладки и следим за ним дальше. */
@@ -1207,12 +1226,12 @@ function routeToPoint(seq){
   setTimeout(()=>drawRoute(Number(seq)),450)}
 
 function partnerFlag(p){return p.completed_at
-  ?'<span class="partner-flag">Штамп получен</span>'
+  ?(p.reward_used?'<span class="partner-flag used">Промокод использован</span>':'<span class="partner-flag ready">Можно получить</span>')
   :'<span class="partner-flag pending">Акция ждёт</span>'}
 
 function partnerCard(p){
   const d=localDistance(p);
-  return `<button class="partner-card ${p.completed_at?'visited':''}" onclick="partnerScreen(${p.seq})">
+  return `<button class="partner-card ${p.completed_at?'visited':''} ${p.reward_used?'used':''}" onclick="partnerScreen(${p.seq})">
     <div class="partner-top"><b>${esc(p.point_name)}</b>${partnerFlag(p)}</div>
     <div class="partner-offer">${icon('gift')}<span><b>${esc(p.reward_title)}</b><span>${esc(p.reward_text)}</span></span></div>
     <div class="partner-meta"><span>${esc(p.address)}</span>${p.partner_hours?`<span>${esc(p.partner_hours)}</span>`:''}${d!=null?`<span>${fmt(d)} от тебя</span>`:''}</div>
@@ -1242,13 +1261,13 @@ function partnerScreen(seq,scanned=false){
     <p>${esc(p.address)}${p.partner_hours?' · '+esc(p.partner_hours):''}${d!=null?' · '+fmt(d)+' от тебя':''}</p>
   </section>
   <section class="partner-list">
-    <div class="partner-card ${done?'visited':''}">
+    <div class="partner-card ${done?'visited':''} ${p.reward_used?'used':''}">
       <div class="partner-offer">${icon('gift')}<span><b>${esc(p.reward_title)}</b><span>${esc(p.reward_text)}</span></span></div>
-      ${done&&p.reward_code?`<section class="reward-code"><span>ПРОМОКОД</span><div><strong>${esc(p.reward_code)}</strong><button onclick="copyPointCode(${p.seq})">${icon('copy')}<span>Копировать</span></button></div></section>`:''}
+      ${done?`<p class="partner-note">${p.reward_used?'Промокод уже был показан сотруднику и использован.':'Промокод можно открыть один раз. Нажимай только рядом с сотрудником заведения.'}</p>`:''}
       <div class="partner-actions">
         <button class="btn secondary" onclick="routeToPoint(${p.seq})">${icon('route')}<span>Маршрут</span></button>
         ${done
-          ?`<button class="btn secondary" onclick="passportScreen()">${icon('stamp')}<span>В паспорт</span></button>`
+          ?(p.reward_used?`<button class="btn secondary" onclick="passportScreen()">${icon('stamp')}<span>Использован</span></button>`:`<button class="btn primary" onclick="prepareReward(${p.seq})">${icon('gift')}<span>Получить промокод</span></button>`)
           :`<button class="btn primary" onclick="scanPoint(${p.seq})">${icon('scan')}<span>Штамп</span></button>`}
       </div>
     </div>
@@ -1563,7 +1582,7 @@ function routeScreen(seq=selectedSeq,track=true){
   if(p.completed_at&&pending.length)p=pending[0];
   selectedSeq=p.seq;
   if(track){eventLog('catalog_open');eventLog('point_view',p.point_id)}
-  const chips=orderedPoints().map(pt=>`<button class="map-chip ${pt.seq===p.seq?'active':''} ${pt.completed_at?'done':''}" onclick="selectPoint(${pt.seq})" aria-label="Точка ${pt.seq}">${pt.completed_at?icon('check'):pt.seq}</button>`).join('');
+  const chips=orderedPoints().map(pt=>`<button data-seq="${pt.seq}" class="map-chip ${pt.seq===p.seq?'active':''} ${pt.completed_at?'done':''}" onclick="selectPoint(${pt.seq})" aria-label="Точка ${pt.seq}">${pt.completed_at?icon('check'):pt.seq}</button>`).join('');
   show(`<section class="map-screen">
     <div id="quest-map" class="quest-map" aria-label="Карта партнёрских точек"></div>
     <div class="map-top">
@@ -1580,14 +1599,27 @@ function routeScreen(seq=selectedSeq,track=true){
 function selectPoint(seq){
   if(state?.campaign?.status!=='active'||state?.session?.status!=='active')
     return toast('Сейчас можно смотреть квест и полученные подарки, но продолжить маршрут нельзя');
-  if(routeSeq!==Number(seq))clearRoute();selectedSeq=Number(seq);routeScreen(selectedSeq);
+  if(routeSeq!==Number(seq))clearRoute();selectedSeq=Number(seq);
   const target=pointBySeq(selectedSeq);
-  // Карта подъезжает к выбранной точке — понятно, куда именно смотреть.
   if(!target)return;
-  setTimeout(()=>{
+  const screen=document.querySelector('.map-screen');
+  if(!screen)return routeScreen(selectedSeq);
+  // Карта остаётся тем же экземпляром: меняются только чипы и нижняя
+  // карточка. Это убирает чёрный кадр при каждом выборе точки.
+  screen.querySelectorAll('.map-chip').forEach(button=>button.classList.toggle('active',Number(button.dataset.seq)===selectedSeq));
+  const oldSheet=document.getElementById('loc-sheet');
+  if(oldSheet)oldSheet.outerHTML=locSheet(target);
+  const geo=screen.querySelector('.map-geo');
+  if(geo)geo.setAttribute('onclick',`geoAndRoute(event,${selectedSeq})`);
+  rasterMarkers.forEach((marker,pointSeq)=>{const point=pointBySeq(pointSeq);if(point)marker.setIcon(pointMarkerIcon(point))});
+  glMarkers.forEach(marker=>{try{const point=pointBySeq(marker.__seq);if(point&&typeof marker.setIcon==='function')marker.setIcon(pinIcon(point.seq===selectedSeq,!!point.completed_at))}catch(_){}});
+  eventLog('point_view',target.point_id);
+  requestAnimationFrame(()=>{
     if(mapEngine==='mapgl'&&glMap){try{glMap.setCenter([target.longitude,target.latitude],{animate:true})}catch(_){}}
-    else questMap?.panTo([target.latitude,target.longitude],{animate:true,duration:.5});
-  },120)}
+    else questMap?.panTo([target.latitude,target.longitude],{animate:true,duration:.45});
+  });
+  tg?.HapticFeedback?.selectionChanged?.();
+  syncBackButton()}
 
 /* Одна кнопка на карте закрывает два сценария:
    нет позиции — запрашиваем разрешение и подбираем ближайшую точку;
@@ -1653,11 +1685,11 @@ async function nearest(){try{const pos=await oneLocation();if(!pos)return toast(
    показываются в метрах. */
 const GEO_TIMEOUT_MS=20000;
 function oneLocation(){return new Promise(resolve=>{let ended=false,browserStarted=false;const finish=v=>{if(!ended){ended=true;resolve(v)}},browser=()=>{if(ended||browserStarted)return;browserStarted=true;navigator.geolocation?navigator.geolocation.getCurrentPosition(v=>finish({lat:v.coords.latitude,lon:v.coords.longitude,accuracy:v.coords.accuracy}),()=>finish(null),{enableHighAccuracy:true,timeout:GEO_TIMEOUT_MS-1500,maximumAge:60000}):finish(null)};setTimeout(()=>finish(null),GEO_TIMEOUT_MS);const manager=tg?.LocationManager,supported=!!manager&&tg?.isVersionAtLeast?.('8.0')===true;if(!supported)return browser();const get=()=>{try{manager.getLocation(v=>v?finish({lat:v.latitude,lon:v.longitude}):browser())}catch(_){browser()}};try{manager.isInited?get():manager.init(get)}catch(_){browser()}})}
-function passportCard(p){const done=!!p.completed_at;return `<button class="passport-place ${done?'done':''}" onclick="${done?`showReward(${p.seq})`:`selectPoint(${p.seq})`}"><div class="mini-stamp"><span>${done?esc(shortName(p)):p.seq}</span>${done?`<small>${completedTime(p.completed_at)} · QR</small>`:'<small>БЕЗ ШТАМПА</small>'}</div><div><b>${esc(p.point_name)}</b><span>${done?esc(p.reward_title):esc(p.address)}</span></div>${icon('arrow')}</button>`}
-function passportScreen(lockMessage=''){sheetOpen=false;if(!lockMessage&&offlineMode)lockMessage='Нет связи. Показан сохранённый паспорт — промокоды действуют.';if(!lockMessage&&state?.campaign?.status!=='active')lockMessage='Квест сейчас на паузе. Полученные штампы и подарки сохранены.';if(!lockMessage&&state?.session?.status==='expired')lockMessage='Время маршрута закончилось. Полученные штампы и подарки сохранены.';const n=completed(),remaining=openPoints()[0],locked=!!lockMessage,canContinue=remaining&&!locked;show(`${header(`<span class="count-label">${n} / 3</span>${tabbar("passport")}`)}<section class="passport-page ${n===3?'complete':''}">${locked?`<div class="expired-note">${esc(lockMessage)}</div>`:''}<div class="passport-title">${n===3?'<div class="final-bb">bb.</div>':''}<p class="micro">BB.BIKE · КРАСНАЯ ПОЛЯНА</p><h1>${n===3?'Паспорт заполнен':'Мой квест'}</h1><p>${n===3?'Все три штампа на месте. Premium готов к оформлению.':'Три штампа партнёров · один месяц Premium'}</p></div><div class="passport-grid">${(state.points||[]).map(passportCard).join('')}</div><section class="premium-card ${n===3?'unlocked':''}"><img src="/static/bb-bike-logo.jpg" alt=""><div><b>${esc(state.campaign.premium_title)}</b><span>${n===3?esc(state.campaign.premium_instruction):`Откроется после ${3-n} ${3-n===1?'штампа':'штампов'}`}</span></div></section>${n===3?`<section class="premium-code"><span>КОД УЧАСТНИКА</span><strong>${esc(state.premium?.public_code||'Оформляется')}</strong><button onclick="copyPremium()">${icon('copy')} Скопировать</button></section>`:''}${canContinue?`<button class="btn primary passport-cta" onclick="selectPoint(${remaining.seq})">К точке «${esc(shortName(remaining))}»</button>`:n===3?'<button class="btn primary passport-cta" onclick="copyPremium()">Скопировать код Premium</button>':`<a class="btn secondary passport-cta support-link" href="${esc(state.support_url)}">Связаться с поддержкой</a>`}${n===3?'<button class="btn secondary share-passport" onclick="sharePassport()">Поделиться результатом</button>':''}${!locked&&n<3?'<button class="btn quiet" onclick="routeScreen()">Вернуться к маршруту</button>':''}</section>`)}
+function passportCard(p){const done=!!p.completed_at,status=p.reward_used?'Промокод использован':p.reward_available?'Промокод доступен · один раз':esc(p.address);return `<button class="passport-place ${done?'done':''} ${p.reward_used?'reward-used-card':''}" onclick="${done?`showReward(${p.seq})`:`selectPoint(${p.seq})`}"><div class="mini-stamp"><span>${done?esc(shortName(p)):p.seq}</span>${done?`<small>${p.reward_used?'ИСПОЛЬЗОВАН':completedTime(p.completed_at)+' · QR'}</small>`:'<small>БЕЗ ШТАМПА</small>'}</div><div><b>${esc(p.point_name)}</b><span>${status}</span></div>${icon('arrow')}</button>`}
+function passportScreen(lockMessage=''){sheetOpen=false;if(!lockMessage&&offlineMode)lockMessage='Нет связи. Статусы наград показаны из сохранённого паспорта.';if(!lockMessage&&state?.campaign?.status!=='active')lockMessage='Квест сейчас на паузе. Полученные штампы и подарки сохранены.';if(!lockMessage&&state?.session?.status==='expired')lockMessage='Время маршрута закончилось. Полученные штампы и подарки сохранены.';const n=completed(),remaining=openPoints()[0],locked=!!lockMessage,canContinue=remaining&&!locked;show(`${header(`<span class="count-label">${n} / 3</span>${tabbar("passport")}`)}<section class="passport-page ${n===3?'complete':''}">${locked?`<div class="expired-note">${esc(lockMessage)}</div>`:''}<div class="passport-title">${n===3?'<div class="final-bb">bb.</div>':''}<p class="micro">BB.BIKE · КРАСНАЯ ПОЛЯНА</p><h1>${n===3?'Паспорт заполнен':'Мой квест'}</h1><p>${n===3?'Все три штампа на месте. Premium готов к проверке.':'Три штампа партнёров · один месяц Premium'}</p></div><div class="reward-warning">Промокод каждого заведения можно получить только один раз. Открывай его рядом с сотрудником — после подтверждения он сразу станет использованным.</div><div class="passport-grid">${(state.points||[]).map(passportCard).join('')}</div><section class="premium-card ${n===3?'unlocked':''}"><img src="/static/bb-bike-logo.jpg" alt=""><div><b>${esc(state.campaign.premium_title)}</b><span>${n===3?'Подписка на 30 дней будет привязана после проверки администратором. '+esc(state.campaign.premium_instruction):`Откроется после ${3-n} ${3-n===1?'штампа':'штампов'}`}</span></div></section>${n===3?`<section class="premium-code"><span>КОД УЧАСТНИКА ДЛЯ ПРОВЕРКИ</span><strong>${esc(state.premium?.public_code||'Оформляется')}</strong><button onclick="copyPremium()">${icon('copy')} Скопировать</button></section>`:''}${canContinue?`<button class="btn primary passport-cta" onclick="selectPoint(${remaining.seq})">К точке «${esc(shortName(remaining))}»</button>`:n===3?'<button class="btn primary passport-cta" onclick="copyPremium()">Скопировать код для проверки</button>':`<a class="btn secondary passport-cta support-link" href="${esc(state.support_url)}">Связаться с поддержкой</a>`}${n===3?'<button class="btn secondary share-passport" onclick="sharePassport()">Поделиться результатом</button>':''}${!locked&&n<3?'<button class="btn quiet" onclick="routeScreen()">Вернуться к маршруту</button>':''}</section>`)}
 function presentModal(html){modalTrigger=document.activeElement;modal.innerHTML=html;const sheet=modal.querySelector('.sheet'),title=sheet?.querySelector('h2')?.textContent?.trim();sheet?.setAttribute('role','dialog');sheet?.setAttribute('aria-modal','true');if(title)sheet?.setAttribute('aria-label',title);syncBackButton();setTimeout(()=>modal.querySelector('button,input')?.focus(),0)}
 function chooseNavigator(seq){const p=pointBySeq(seq);selectedSeq=seq;presentModal(`<div class="modal" onclick="if(event.target===this)closeModal()"><section class="sheet"><div class="sheet-head"><div><p class="micro">КАК ДОБРАТЬСЯ</p><h2>${esc(p.point_name)}</h2></div><button class="icon-button" aria-label="Закрыть" onclick="closeModal()">×</button></div><p class="sheet-copy">Навигатор сам определит твоё текущее местоположение.</p><div class="navigator-list"><button onclick="openRoute(${seq},'yandex','bc')"><span class="provider yandex">Я</span><b>Яндекс · Бибибайк</b>${icon('arrow')}</button><button onclick="openRoute(${seq},'yandex','pd')"><span class="provider yandex">Я</span><b>Яндекс · пешком</b>${icon('arrow')}</button><button onclick="openRoute(${seq},'2gis','car')"><span class="provider dgis">2</span><b>2ГИС · на машине</b>${icon('arrow')}</button><button onclick="openRoute(${seq},'2gis','pedestrian')"><span class="provider dgis">2</span><b>2ГИС · пешком</b>${icon('arrow')}</button></div><button class="btn quiet" onclick="copyAddress(${seq})">Скопировать адрес</button></section></div>`)}
-function openRoute(seq,provider,mode){const p=pointBySeq(seq);eventLog('navigator_open',p.point_id,provider);const url=provider==='yandex'?`https://yandex.ru/maps/?rtext=~${p.latitude},${p.longitude}&rtt=${mode}`:`https://2gis.ru/routeSearch/${mode==='pedestrian'?'rsType/pedestrian/':''}to/${p.longitude},${p.latitude}/go`;closeModal();tg?.openLink?tg.openLink(url):window.open(url,'_blank','noopener')}
+function openRoute(seq,provider,mode){const p=pointBySeq(seq);eventLog('navigator_open',p.point_id,provider);const url=provider==='yandex'?`https://yandex.ru/maps/?rtext=~${p.latitude},${p.longitude}&rtt=${mode}`:`https://2gis.ru/routeSearch/rsType/${mode==='pedestrian'?'pedestrian':'car'}/to/${p.longitude},${p.latitude}/go`;closeModal();tg?.openLink?tg.openLink(url,{try_instant_view:false}):window.open(url,'_blank','noopener')}
 function copyAddress(seq){const p=pointBySeq(seq);navigator.clipboard?.writeText(p.address);toast('Адрес скопирован')}
 function scannerScreen(p){show(`${header(`<button class="icon-button" aria-label="Вернуться к маршруту" onclick="routeScreen(${p.seq},false)">${icon('back')}</button>`)}<section class="scanner-screen">${localDistance(p)!=null?`<span class="scan-chip">гео ок · ${fmt(localDistance(p))}</span>`:''}<div class="scanner-hint"><h1>Сканируй QR партнёра</h1><p>Наведи камеру на табличку у стойки «${esc(shortName(p))}». Отметка засчитается сразу.</p></div><div class="scanner-frame" aria-hidden="true"><i></i><i></i><i></i><i></i><span class="grid"></span><span class="beam"></span></div><div class="scanner-safety">Сначала полностью остановись и припаркуй байк</div><button class="btn primary" onclick="openNativeScanner(${p.seq})">${icon('scan')} Открыть камеру</button><button class="btn secondary" onclick="manualCode()">Ввести код вручную</button></section>`)}
 function openNativeScanner(seq){const p=pointBySeq(seq),supported=!!tg?.showScanQrPopup&&(typeof tg.isVersionAtLeast!=='function'||tg.isVersionAtLeast('6.4'));if(!supported)return manualCode();try{qrPopupOpen=true;tg.showScanQrPopup({text:'Наведи камеру на зелёную табличку bb.bike'},value=>{qrPopupOpen=false;try{tg.closeScanQrPopup()}catch(_){/* popup may already be closed */}submitQr(value);return true})}catch(_){qrPopupOpen=false;manualCode()}}
@@ -1683,9 +1715,11 @@ async function submitQr(value){
     }
     routeScreen();
   }catch(x){tg?.HapticFeedback?.notificationOccurred?.('error');toast(x.message)}}
-function stampSuccess(seq){const p=pointBySeq(seq),n=completed();show(`${header(`<span class="count-label">${n} ${n===1?'штамп':'штампа'}</span>`)}<section class="stamp-screen"><div class="stamp-seal-wrap"><div class="stamp-seal"><span class="city">КРАСНАЯ ПОЛЯНА</span><span class="name">${esc(shortName(p))}</span><span class="meta">${completedTime(p.completed_at)} · ${state?.scan_requires_geo?'ГЕО + QR':'QR'}</span></div></div><h1>${n===3?'Квест пройден':'Отметка засчитана'}</h1><p class="lead">${n===3?'Все три точки пройдены. Premium уже твой.':n===2?'Остался один — и квест закрыт.':`Подарок сохранён. До Premium — ${3-n} отметки.`}</p><section class="reward-code"><span>ПРОМОКОД ТОЧКИ</span><div><strong>${esc(p.reward_code||'Сохранён')}</strong><button onclick="copyPointCode(${p.seq})">${icon('copy')}<span>Копировать</span></button></div></section>${stampRail(seq)}<button class="btn primary stamp-next" onclick="${n===3?'passportScreen()':'selectPoint(openPoints()[0]?.seq)'}">${n===3?'Открыть мой квест':'Выбрать следующий штамп'}</button></section>`);tg?.HapticFeedback?.notificationOccurred('success')}
-function showReward(seq){const p=pointBySeq(seq);show(`${header(`<button class="icon-button" aria-label="Вернуться к квесту" onclick="passportScreen()">${icon('back')}</button>`)}<section class="saved-reward"><div class="stamp-seal small"><span>ПОДАРОК ПАРТНЁРА</span><strong>${esc(shortName(p))}</strong><small>${completedTime(p.completed_at)} · QR</small></div><p class="micro">СОХРАНЕНО В ПАСПОРТЕ</p><h1>${esc(p.reward_title)}</h1><p>${esc(p.reward_text)}</p><section class="reward-code"><span>ПРОМОКОД</span><div><strong>${esc(p.reward_code||'Сохранён')}</strong><button onclick="copyPointCode(${p.seq})">${icon('copy')}<span>Копировать</span></button></div></section><button class="btn primary" onclick="passportScreen()">Вернуться к квесту</button></section>`)}
-function copyPointCode(seq){const code=pointBySeq(seq)?.reward_code||'';navigator.clipboard?.writeText(code);toast('Промокод скопирован')}
+function stampSuccess(seq){const p=pointBySeq(seq),n=completed();show(`${header(`<span class="count-label">${n} ${n===1?'штамп':'штампа'}</span>`)}<section class="stamp-screen"><div class="stamp-seal-wrap"><div class="stamp-seal"><span class="city">КРАСНАЯ ПОЛЯНА</span><span class="name">${esc(shortName(p))}</span><span class="meta">${completedTime(p.completed_at)} · ${state?.scan_requires_geo?'ГЕО + QR':'QR'}</span></div></div><h1>${n===3?'Квест пройден':'Отметка засчитана'}</h1><p class="lead">${n===3?'Все три точки пройдены. Premium будет привязан после проверки.':n===2?'Остался один — и квест закрыт.':`Подарок сохранён. До Premium — ${3-n} отметки.`}</p><div class="reward-warning">Промокод сохранён в паспорте. Он откроется только один раз — показывай его сотруднику заведения.</div>${stampRail(seq)}<button class="btn primary stamp-next" onclick="${n===3?'passportScreen()':'selectPoint(openPoints()[0]?.seq)'}">${n===3?'Открыть мой квест':'Выбрать следующий штамп'}</button></section>`);tg?.HapticFeedback?.notificationOccurred('success')}
+function showReward(seq){const p=pointBySeq(seq);if(!p)return passportScreen();const used=!!p.reward_used;show(`${header(`<button class="icon-button" aria-label="Вернуться к квесту" onclick="passportScreen()">${icon('back')}</button>`)}<section class="saved-reward"><div class="stamp-seal small"><span>ПОДАРОК ПАРТНЁРА</span><strong>${esc(shortName(p))}</strong><small>${used?'ИСПОЛЬЗОВАН':completedTime(p.completed_at)+' · QR'}</small></div><p class="micro">${used?'ПРОМОКОД ИСПОЛЬЗОВАН':'СОХРАНЕНО В ПАСПОРТЕ'}</p><h1>${esc(p.reward_title)}</h1><p>${esc(p.reward_text)}</p>${used?'<div class="reward-warning">Этот промокод уже был показан и больше не откроется.</div>':'<div class="reward-warning">Код можно увидеть только один раз. Перед нажатием позови сотрудника заведения.</div><button class="btn primary" onclick="prepareReward('+p.seq+')">Показать сотруднику</button>'}<button class="btn secondary" onclick="passportScreen()">Вернуться к квесту</button></section>`)}
+function prepareReward(seq){const p=pointBySeq(seq);if(!p||p.reward_used)return showReward(seq);presentModal(`<div class="modal" onclick="if(event.target===this)closeModal()"><section class="sheet"><div class="sheet-head"><div><p class="micro">ОДНОРАЗОВЫЙ ПРОМОКОД</p><h2>Сотрудник рядом?</h2></div><button class="icon-button" aria-label="Закрыть" onclick="closeModal()">×</button></div><p class="sheet-copy">После подтверждения код появится только на этом экране и сразу будет отмечен использованным. Повторно открыть его нельзя.</p><button class="btn primary" onclick="redeemReward(${seq})">Да, показать код</button><button class="btn quiet" onclick="closeModal()">Пока не открывать</button></section></div>`)}
+async function redeemReward(seq){const button=modal.querySelector('.btn.primary');if(button)button.disabled=true;try{const result=await api('/api/quest/rewards/'+seq+'/redeem',{method:'POST',body:'{}'});state=result.data;cacheState(state);closeModal();showOneTimeReward(result.reward)}catch(x){if(button)button.disabled=false;toast(x.message);if(x.message.includes('использован')){await refresh({silent:true});showReward(seq)}}}
+function showOneTimeReward(reward){show(`${header(`<span class="count-label">ОДИН РАЗ</span>`)}<section class="saved-reward"><div class="stamp-seal small"><span>ПОДТВЕРЖДЕНО</span><strong>${esc(shortName({point_name:reward.point_name}))}</strong><small>ИСПОЛЬЗОВАН</small></div><p class="micro">ПОКАЖИ СОТРУДНИКУ СЕЙЧАС</p><h1>${esc(reward.reward_title)}</h1><div class="one-time-code"><span>ОДНОРАЗОВЫЙ ПРОМОКОД</span><strong>${esc(reward.code)}</strong></div><div class="reward-warning">После ухода с этого экрана код больше не показывается.</div><button class="btn primary" onclick="passportScreen()">Готово</button></section>`);tg?.HapticFeedback?.notificationOccurred?.('success')}
 function copyPremium(){const code=state?.premium?.public_code||'';navigator.clipboard?.writeText(code);toast(code?'Premium скопирован':'Premium ещё оформляется')}
 function sharePassport(){const text='Я собрал все 3 штампа в квесте bb.bike по Красной Поляне. Присоединяйся!';
   /* Ссылка ведёт прямо в мини-апп бота: раньше шарился голый домен,

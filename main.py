@@ -90,6 +90,8 @@ class Settings:
     timezone: str
     init_data_max_age_sec: int
     admin_ticket_ttl_sec: int
+    admin_password: str
+    admin_session_ttl_sec: int
     session_duration_min: int
     location_stale_sec: int
     location_retention_days: int
@@ -158,9 +160,10 @@ def load_settings() -> Settings:
     token = os.getenv("BOT_TOKEN", "").strip()
     url = os.getenv("WEBAPP_URL", "").strip().rstrip("/")
     qr_secret = os.getenv("QR_SECRET", "").strip()
-    # Администраторы по умолчанию. Дополняются переменной ADMIN_IDS.
-    DEFAULT_ADMIN_IDS = frozenset({1473144466})
-    admin_ids = _ids(os.getenv("ADMIN_IDS", "")) | DEFAULT_ADMIN_IDS
+    # ADMIN_IDS больше не управляет входом в CRM. Список оставлен только для
+    # необязательных служебных команд бота (например, загрузки фото).
+    admin_ids = _ids(os.getenv("ADMIN_IDS", ""))
+    admin_password = os.getenv("ADMIN_PASSWORD", "").strip()
     dev_user_id = int(os.getenv("DEV_USER_ID", "999000111"))
     if not dev_mode:
         missing = []
@@ -168,8 +171,8 @@ def load_settings() -> Settings:
             missing.append("BOT_TOKEN")
         if not url.startswith("https://"):
             missing.append("WEBAPP_URL (HTTPS)")
-        if not admin_ids:
-            missing.append("ADMIN_IDS")
+        if len(admin_password) < 10:
+            missing.append("ADMIN_PASSWORD (минимум 10 символов)")
         if len(qr_secret) < 32:
             missing.append("QR_SECRET (минимум 32 символа)")
         if missing:
@@ -178,6 +181,7 @@ def load_settings() -> Settings:
         token = token or "000000:development-token"
         url = url or "http://127.0.0.1:3000"
         qr_secret = qr_secret or "local-preview-secret-never-production"
+        admin_password = admin_password or "local-admin-password"
         # Раньше здесь было `admin_ids or {dev_user_id}`, но DEFAULT_ADMIN_IDS
         # всегда непустой, поэтому локальный разработчик не мог открыть CRM.
         admin_ids = admin_ids | frozenset({dev_user_id})
@@ -197,6 +201,8 @@ def load_settings() -> Settings:
         # authentication indefinitely.
         init_data_max_age_sec=int(os.getenv("INIT_DATA_MAX_AGE_SEC", "43200")),
         admin_ticket_ttl_sec=int(os.getenv("ADMIN_TICKET_TTL_SEC", "43200")),
+        admin_password=admin_password,
+        admin_session_ttl_sec=int(os.getenv("ADMIN_SESSION_TTL_SEC", "43200")),
         session_duration_min=int(os.getenv("SESSION_DURATION_MIN", "240")),
         location_stale_sec=int(os.getenv("LOCATION_STALE_SEC", "300")),
         location_retention_days=int(os.getenv("LOCATION_RETENTION_DAYS", "7")),
@@ -219,7 +225,7 @@ def load_settings() -> Settings:
         # Движок построения маршрутов по дорогам. Публичный сервер OSRM
         # рассчитан на пробные нагрузки: при росте трафика стоит поднять
         # свой или подключить платный и указать его здесь.
-        routing_upstream=os.getenv("ROUTING_UPSTREAM", "https://router.project-osrm.org/route/v1").strip(),
+        routing_upstream=os.getenv("ROUTING_UPSTREAM", "https://routing.openstreetmap.de/routed-bike/route/v1").strip(),
         # TILE_THEME=light вернёт обычную светлую карту без перекраски.
         tile_theme=os.getenv("TILE_THEME", "dark").strip().lower(),
         tile_palette_name=os.getenv("TILE_PALETTE", "night").strip().lower(),
@@ -338,6 +344,7 @@ CREATE TABLE IF NOT EXISTS session_points (
     qr_seen_at TEXT,
     completed_at TEXT,
     reward_code TEXT,
+    reward_redeemed_at TEXT,
     UNIQUE(session_id, seq),
     UNIQUE(session_id, point_id)
 );
@@ -466,6 +473,10 @@ class Database:
                     )
                 except Exception:
                     pass      # колонка уже есть — это нормально
+        try:
+            await self._db.execute("ALTER TABLE session_points ADD COLUMN reward_redeemed_at TEXT")
+        except Exception:
+            pass
         await self._db.execute(
             "INSERT INTO schema_meta(key,value) VALUES('version','2') ON CONFLICT(key) DO UPDATE SET value=excluded.value"
         )
@@ -590,17 +601,42 @@ def is_root_admin(user_id: int, settings: Settings) -> bool:
     return user_id in settings.admin_ids
 
 
+ADMIN_COOKIE = "bb_admin"
+
+
+def create_admin_session(settings: Settings, now: int | None = None) -> str:
+    """Короткая подписанная сессия после входа по паролю."""
+    expires_at = int(time.time() if now is None else now) + settings.admin_session_ttl_sec
+    payload = str(expires_at)
+    signature = hmac.new(
+        settings.qr_secret.encode(), f"admin-session:{payload}".encode(), hashlib.sha256
+    ).hexdigest()
+    return f"{payload}.{signature}"
+
+
+def validate_admin_session(value: str, settings: Settings, now: int | None = None) -> bool:
+    try:
+        raw_expires, received = value.split(".", 1)
+        expires_at = int(raw_expires)
+    except (AttributeError, TypeError, ValueError):
+        return False
+    current = int(time.time() if now is None else now)
+    if expires_at < current or expires_at > current + settings.admin_session_ttl_sec + 60:
+        return False
+    expected = hmac.new(
+        settings.qr_secret.encode(), f"admin-session:{expires_at}".encode(), hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(expected, received)
+
+
 def require_admin(request: web.Request, settings: Settings) -> TelegramIdentity:
-    identity = request_identity(request, settings)
-    if not is_admin(identity.user_id, settings):
-        raise web.HTTPForbidden(text=json.dumps({"ok": False, "error": "admin_required"}), content_type="application/json")
-    ticket = request.headers.get("X-Admin-Ticket", "")
-    if validate_admin_ticket(ticket, settings) != identity.user_id:
-        raise web.HTTPForbidden(
-            text=json.dumps({"ok": False, "error": "admin_command_required"}),
+    if not validate_admin_session(request.cookies.get(ADMIN_COOKIE, ""), settings):
+        raise web.HTTPUnauthorized(
+            text=json.dumps({"ok": False, "error": "admin_password_required", "message": "Войди по паролю."}),
             content_type="application/json",
         )
-    return identity
+    # Служебный actor_id для журнала. Доступ больше не связан с Telegram ID.
+    return TelegramIdentity(0, "password-admin", "Администратор", "", "ru")
 
 
 def create_admin_ticket(user_id: int, settings: Settings, now: int | None = None) -> str:
@@ -1076,7 +1112,7 @@ class QuestService:
             )).fetchall()
         else:
             points = await (await db.execute(
-                "SELECT id point_id,seq,name point_name,address,latitude,longitude,radius_m,reward_title,reward_text,partner_hours,photo_url,description,NULL location_seen_at,NULL qr_seen_at,NULL completed_at,NULL reward_code FROM points WHERE campaign_id=? AND active=1 ORDER BY seq",
+                "SELECT id point_id,seq,name point_name,address,latitude,longitude,radius_m,reward_title,reward_text,partner_hours,photo_url,description,NULL location_seen_at,NULL qr_seen_at,NULL completed_at,NULL reward_code,NULL reward_redeemed_at FROM points WHERE campaign_id=? AND active=1 ORDER BY seq",
                 (campaign["id"],),
             )).fetchall()
         last_age = None
@@ -1088,6 +1124,14 @@ class QuestService:
         for point in points:
             item = row_dict(point)
             item.pop("id", None)
+            # Сам промокод не входит в обычное состояние приложения. Он
+            # возвращается только атомарным запросом выдачи и показывается
+            # ровно один раз на устройстве сотруднику заведения.
+            item["reward_available"] = bool(
+                point["completed_at"] and point["reward_code"] and not point["reward_redeemed_at"]
+            )
+            item["reward_used"] = bool(point["reward_redeemed_at"])
+            item.pop("reward_code", None)
             # Расстояние теперь вычисляется только на устройстве пользователя.
             # Координата участника не отправляется и не хранится на сервере.
             item["distance_m"] = None
@@ -1327,6 +1371,43 @@ class QuestService:
         else:
             await db.execute("UPDATE sessions SET status='active',current_seq=? WHERE id=?", (min(3, progress["completed"] + 1), session_id))
         return True
+
+    async def redeem_reward(self, identity: TelegramIdentity, seq: int) -> dict:
+        """Одноразово показать промокод уже полученного подарка.
+
+        Транзакционная блокировка не даёт двум быстрым нажатиям или двум
+        телефонам получить один код дважды. После ответа обычный state больше
+        никогда не содержит секрет, только статус «использован».
+        """
+        if seq not in (1, 2, 3):
+            raise QuestError("bad_reward", "Награда не найдена.", 404)
+        async with self.lock_for(identity.user_id):
+            async with self.db.transaction() as db:
+                point = await (await db.execute(
+                    """SELECT sp.* FROM session_points sp
+                       JOIN sessions s ON s.id=sp.session_id
+                       WHERE s.user_id=? AND sp.seq=?""",
+                    (identity.user_id, seq),
+                )).fetchone()
+                if not point or not point["completed_at"] or not point["reward_code"]:
+                    raise QuestError("reward_locked", "Сначала получи штамп этой точки.", 409)
+                if point["reward_redeemed_at"]:
+                    raise QuestError("reward_used", "Этот промокод уже был показан и отмечен как использованный.", 409)
+                redeemed_at = iso()
+                await db.execute(
+                    "UPDATE session_points SET reward_redeemed_at=? WHERE id=? AND reward_redeemed_at IS NULL",
+                    (redeemed_at, point["id"]),
+                )
+                data = await self._state_in_tx(db, identity.user_id)
+                return {
+                    "data": data,
+                    "reward": {
+                        "code": point["reward_code"],
+                        "point_name": point["point_name"],
+                        "reward_title": point["reward_title"],
+                        "redeemed_at": redeemed_at,
+                    },
+                }
 
     async def admin_overview(self) -> dict:
         campaign = row_dict(await self._campaign())
@@ -1744,9 +1825,8 @@ def quest_keyboard(settings: Settings) -> InlineKeyboardMarkup:
     ]])
 
 
-def admin_keyboard(settings: Settings, user_id: int) -> InlineKeyboardMarkup:
-    ticket = create_admin_ticket(user_id, settings)
-    url = f"{settings.admin_url}?ticket={ticket}"
+def admin_keyboard(settings: Settings, user_id: int = 0) -> InlineKeyboardMarkup:
+    url = settings.admin_url
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="Открыть CRM", web_app=WebAppInfo(url=url))
     ]])
@@ -1822,11 +1902,10 @@ def build_router(service: QuestService, settings: Settings) -> Router:
 
     @router.message(Command("admin"))
     async def admin(message: Message):
-        if not message.from_user or not is_admin(message.from_user.id, settings):
-            await message.answer("Панель доступна только администраторам квеста.")
+        if not message.from_user:
             return
         await message.answer(
-            "<b>CRM квеста</b>\n\nСсылка персональная и открывается только из этой команды.",
+            "<b>CRM квеста</b>\n\nВход защищён паролем из ADMIN_PASSWORD.",
             reply_markup=admin_keyboard(settings, message.from_user.id),
         )
 
@@ -2071,13 +2150,13 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
             # Карты 2ГИС: библиотека, векторные тайлы и шрифты лежат на их домене,
             # рендеринг идёт в отдельном потоке, поэтому нужен blob-worker.
             "worker-src 'self' blob:; "
-            "connect-src 'self' https://*.2gis.com https://*.2gis.ru; "
+            "connect-src 'self' https://*.2gis.com https://*.2gis.ru https://*.2gis.cloud; "
             # Подписи на карте берут шрифты с домена 2ГИС. Без этой строки
             # библиотека загружалась, маркеры рисовались, а сама карта
             # оставалась чёрной — именно на этом всё и споткнулось.
             "font-src 'self' data: https://*.2gis.com https://*.2gis.ru; "
             "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; "
-            "connect-src 'self'; frame-ancestors 'self' https://web.telegram.org"
+            "frame-ancestors 'self' https://web.telegram.org"
         )
         return response
 
@@ -2086,13 +2165,37 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
     async def index(_):
         return web.FileResponse(root / "index.html", headers={"Cache-Control": "no-cache"})
 
-    async def admin_page(request):
-        ticket = request.query.get("ticket", "")
-        if validate_admin_ticket(ticket, settings) is None:
-            raise web.HTTPFound(location="/")
-        # admin.html deliberately lives outside the public static directory.
-        # This signed handler is the only route capable of serving the CRM.
+    async def admin_page(_):
+        # Страница публична, но данные и действия закрыты HttpOnly-сессией,
+        # которую сервер выдаёт только после правильного ADMIN_PASSWORD.
         return web.FileResponse(root / "admin.html", headers={"Cache-Control": "no-cache"})
+
+    async def admin_login(request):
+        peer = request.headers.get("X-Forwarded-For", request.remote or "unknown").split(",", 1)[0].strip()
+        if not limiter.allow(f"admin-login:{peer}", 8, 300):
+            raise QuestError("rate_limited", "Слишком много попыток. Попробуй через пять минут.", 429)
+        body = await json_body(request, max_keys=3)
+        supplied = str(body.get("password") or "")
+        if not hmac.compare_digest(supplied.encode(), settings.admin_password.encode()):
+            # Одинаковый ответ не раскрывает, существует ли панель и как
+            # именно устроен пароль.
+            raise QuestError("bad_password", "Неверный пароль.", 401)
+        response = json_response({"authenticated": True})
+        response.set_cookie(
+            ADMIN_COOKIE,
+            create_admin_session(settings),
+            max_age=settings.admin_session_ttl_sec,
+            httponly=True,
+            secure=not settings.dev_mode,
+            samesite="Strict",
+            path="/",
+        )
+        return response
+
+    async def admin_logout(_):
+        response = json_response({"authenticated": False})
+        response.del_cookie(ADMIN_COOKIE, path="/")
+        return response
 
     async def public_info(_):
         nonlocal bot_username_cache
@@ -2173,7 +2276,9 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         for value in (from_lon, to_lon):
             if not -180 <= value <= 180:
                 raise QuestError("bad_request", "Координаты вне диапазона.", 400)
-        profile = "cycling" if request.query.get("mode", "bike") == "bike" else "foot"
+        # routed-bike использует стандартное имя OSRM-профиля `driving`,
+        # хотя граф внутри сервиса велосипедный.
+        profile = "driving"
         key = f"{profile}:{from_lat:.4f},{from_lon:.4f}:{to_lat:.4f},{to_lon:.4f}"
         if key in route_cache:
             return json_response(route_cache[key])
@@ -2487,6 +2592,13 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
                 log.warning("Не удалось отправить уведомление user=%s: %s", identity.user_id, type(exc).__name__)
         return json_response({"data": data})
 
+    async def redeem_reward(request):
+        identity = request_identity(request, settings)
+        if not limiter.allow(f"redeem:{identity.user_id}", 8):
+            raise QuestError("rate_limited", "Подожди минуту и попробуй снова.", 429)
+        result = await service.redeem_reward(identity, int(request.match_info["seq"]))
+        return json_response(result)
+
     async def admin_overview(request):
         require_admin(request, settings)
         return json_response({"data": await service.admin_overview()})
@@ -2645,6 +2757,9 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
     app.router.add_post("/api/quest/start", start)
     app.router.add_post("/api/quest/event", event)
     app.router.add_post("/api/quest/scan", scan)
+    app.router.add_post("/api/quest/rewards/{seq}/redeem", redeem_reward)
+    app.router.add_post("/api/admin/login", admin_login)
+    app.router.add_post("/api/admin/logout", admin_logout)
     app.router.add_get("/api/admin/overview", admin_overview)
     app.router.add_post("/api/admin/campaign", admin_campaign)
     app.router.add_post("/api/admin/points/{point_id}", admin_point)
@@ -2652,9 +2767,6 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
     app.router.add_post("/api/admin/points/{point_id}/qr", admin_create_qr)
     app.router.add_post("/api/admin/qr/{qr_id}/status", admin_qr_status)
     app.router.add_post("/api/admin/qr/{qr_id}/delete", admin_delete_qr)
-    app.router.add_get("/api/admin/admins", admin_list_admins)
-    app.router.add_post("/api/admin/admins", admin_grant)
-    app.router.add_post("/api/admin/admins/{user_id}/revoke", admin_revoke)
     app.router.add_post("/api/admin/premium/{session_id}/issued", admin_premium)
     app.router.add_post("/api/admin/points/{point_id}/qr/link", admin_link_qr)
     app.router.add_post("/api/admin/participants/{session_id}/delete", admin_delete_participant)

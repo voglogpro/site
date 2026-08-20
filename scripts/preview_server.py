@@ -13,10 +13,7 @@ os.environ.setdefault("DATA_DIR", str(Path(__file__).resolve().parent.parent / "
 
 from aiohttp import web
 
-from quest.api import create_web_app
-from quest.config import load_settings
-from quest.db import Database
-from quest.service import QuestService
+from main import Database, QuestService, create_web_app, load_settings
 
 
 class PreviewBot:
