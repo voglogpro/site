@@ -28,6 +28,10 @@ class PreviewBot:
         self.sent_messages.append((chat_id, text))
         return type("PreviewMessage", (), {"message_id": len(self.sent_messages)})()
 
+    async def save_prepared_inline_message(self, user_id, result, **_kwargs):
+        self.sent_messages.append((user_id, f"prepared:{result.id}"))
+        return type("PreparedMessage", (), {"id": f"preview-share-{user_id}"})()
+
 
 async def main() -> None:
     settings = load_settings()

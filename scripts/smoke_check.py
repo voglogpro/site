@@ -182,9 +182,22 @@ async def scenario(order: tuple[int, ...]) -> None:
         finally: await db.close()
 
 async def main() -> None:
-    leaflet = (Path(__file__).resolve().parent.parent / "static" / "vendor" / "leaflet-1.9.4.asset").read_bytes()
+    root = Path(__file__).resolve().parent.parent
+    leaflet = (root / "static" / "vendor" / "leaflet-1.9.4.asset").read_bytes()
     assert hashlib.sha256(leaflet.rstrip(b"\n")).hexdigest() == "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a"
-    webapp = (Path(__file__).resolve().parent.parent / "index.html").read_text(encoding="utf-8")
+    invite_video = (root / "static" / production.QUEST_SHARE_VIDEO).read_bytes()
+    assert len(invite_video) == 28_718_520
+    assert invite_video[4:12] == b"ftypmp42"
+    assert len(production.QUEST_SHARE_TEXT) <= 1024
+    share_settings = production.load_settings()
+    share_result = production.quest_share_result(share_settings, "quest_bot", "build abc123")
+    assert share_result.mime_type == "video/mp4"
+    assert share_result.video_url.endswith("/static/bbbike-quest-invite.mp4?v=abc123")
+    assert share_result.caption == production.QUEST_SHARE_TEXT
+    assert share_result.reply_markup.inline_keyboard[0][0].url == "https://t.me/quest_bot?startapp=quest"
+    webapp = (root / "index.html").read_text(encoding="utf-8")
+    assert "/api/quest/share/invite" in webapp and "tg.shareMessage" in webapp
+    assert "Поделиться квестом" in webapp and "Отправить приглашение с видео" in webapp
     assert "function useMapgl(){return !!mapglKey()&&!!window.mapgl&&!window.__mapglFailed}" in webapp
     assert "function initGlMap(" in webapp and "new mapgl.Map(node,opts)" in webapp
     assert "2gis.ru/directions/tab/" in webapp and "2gis.ru/routeSearch/rsType" not in webapp
@@ -211,5 +224,5 @@ async def main() -> None:
     assert validate_admin_ticket(ticket, settings, now=1_000 + settings.admin_ticket_ttl_sec + 1) is None
     for order in itertools.permutations(range(3)): await scenario(order)
     await production_reward_scenario()
-    print("PASS: persistence, maps, 6 point orders, QR idempotency, password session, one-time rewards, Premium and CRM support")
+    print("PASS: persistence, maps, 6 point orders, QR idempotency, password session, one-time rewards, Premium, CRM support and native video sharing")
 if __name__ == "__main__": asyncio.run(main())

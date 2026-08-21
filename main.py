@@ -36,7 +36,10 @@ from aiogram import Bot, Router, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandObject, CommandStart
-from aiogram.types import (BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonWebApp, Message, WebAppInfo,)
+from aiogram.types import (
+    BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup,
+    InlineQueryResultVideo, MenuButtonWebApp, Message, WebAppInfo,
+)
 from aiohttp import web
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
@@ -128,6 +131,43 @@ DEFAULT_TILE_SOURCES = (
 
 DEFAULT_MAPGL_LIGHT_STYLE = "c080bb6a-8134-4993-93a1-5b4d8c36a59b"
 DEFAULT_MAPGL_DARK_STYLE = "9643e8da-173b-4359-9fee-8a1fe58e68aa"
+
+QUEST_SHARE_VIDEO = "bbbike-quest-invite.mp4"
+QUEST_SHARE_TEXT = """Добро пожаловать в квест bb.bike 💚
+
+Гуляй по Красной Поляне, отмечайся на локациях, получай подарки от наших партнёров. А за завершённый квест — МЕСЯЦ бесплатной активации Bibibike.
+
+Здесь всё просто:
+1. Выбери любую из трёх точек.
+2. Построй маршрут в Яндекс Картах или 2ГИС.
+3. На месте отсканируй QR через мини-приложение и забери подарок.
+
+Как только отсканировано 3 уникальных QR-кода — квест считается пройденным. А в подарок — Premium bb.bike на 30 дней 🛵
+
+Во время поездки следи за дорогой, а телефон используй только после полной остановки."""
+
+
+def quest_share_result(settings: "Settings", bot_username: str, build_version: str) -> InlineQueryResultVideo:
+    """Build the native Telegram share payload with the invitation video."""
+    base = settings.webapp_url.rstrip("/")
+    version = re.sub(r"[^A-Za-z0-9_-]", "", build_version.rsplit(" ", 1)[-1])[:20] or "current"
+    open_url = f"https://t.me/{bot_username}?startapp=quest" if bot_username else base
+    return InlineQueryResultVideo(
+        id=f"bbbike-quest-{version}"[:64],
+        video_url=f"{base}/static/{QUEST_SHARE_VIDEO}?v={version}",
+        mime_type="video/mp4",
+        thumbnail_url=f"{base}/static/bb-bike-logo.jpg?v={version}",
+        title="Квест bb.bike · Красная Поляна",
+        description="Три точки, подарки партнёров и Premium на 30 дней",
+        caption=QUEST_SHARE_TEXT,
+        parse_mode=None,
+        video_width=1072,
+        video_height=1920,
+        video_duration=34,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Открыть квест bb.bike", url=open_url)
+        ]]),
+    )
 
 
 def _tile_upstreams() -> tuple[str, ...]:
@@ -3056,6 +3096,34 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
             "support_url": "" if notified or support_pending else support_draft_url(settings.support_url, draft),
         })
 
+    async def share_invite(request):
+        nonlocal bot_username_cache
+        identity = request_identity(request, settings)
+        if not limiter.allow(f"share-invite:{identity.user_id}", 10):
+            raise QuestError("rate_limited", "Слишком много попыток. Подожди минуту.", 429)
+        if not bot_username_cache:
+            bot_username_cache = (await bot.get_me()).username or ""
+        try:
+            prepared = await bot.save_prepared_inline_message(
+                identity.user_id,
+                quest_share_result(settings, bot_username_cache, build_version),
+                allow_user_chats=True,
+                allow_bot_chats=False,
+                allow_group_chats=True,
+                allow_channel_chats=False,
+            )
+        except Exception as exc:
+            log.warning(
+                "Не удалось подготовить приглашение user=%s: %s",
+                identity.user_id, type(exc).__name__,
+            )
+            raise QuestError(
+                "share_unavailable",
+                "Не удалось прикрепить видео. Проверь интернет и попробуй ещё раз.",
+                502,
+            )
+        return json_response({"prepared_message_id": prepared.id})
+
     async def admin_overview(request):
         require_admin(request, settings)
         return json_response({"data": await service.admin_overview()})
@@ -3274,6 +3342,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
     app.router.add_post("/api/quest/scan", scan)
     app.router.add_post("/api/quest/rewards/{seq}/redeem", redeem_reward)
     app.router.add_post("/api/quest/premium/request", request_premium)
+    app.router.add_post("/api/quest/share/invite", share_invite)
     app.router.add_post("/api/admin/login", admin_login)
     app.router.add_post("/api/admin/logout", admin_logout)
     app.router.add_get("/api/admin/overview", admin_overview)
@@ -3323,6 +3392,7 @@ def _build_fingerprint() -> str:
     digest = hashlib.sha256()
     for name in (
         "main.py", "index.html", "admin.html", "static/bb-bike-logo.jpg",
+        f"static/{QUEST_SHARE_VIDEO}",
         "static/admin.css", "static/vendor/leaflet.css",
         "static/vendor/leaflet-1.9.4.asset",
     ):

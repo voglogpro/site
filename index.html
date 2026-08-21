@@ -1219,6 +1219,7 @@ const ICONS={
   book:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 5.5A1.5 1.5 0 0 1 6.5 4H18v16H6.5A1.5 1.5 0 0 1 5 18.5v-13Z"/><path d="M9 8h6M9 12h6"/></svg>',
   geo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21s7-5.4 7-11a7 7 0 1 0-14 0c0 5.6 7 11 7 11Z"/><circle cx="12" cy="10" r="2.6"/></svg>',
   help:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.3c-.7.3-1 .9-1 1.6"/><circle cx="12" cy="16.6" r=".9" fill="currentColor" stroke="none"/></svg>',
+  share:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.5M8.2 13.2l7.6 4.5"/></svg>',
   gift:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="9" width="17" height="11" rx="2"/><path d="M3.5 12.5h17M12 9v11"/><path d="M12 9S10.4 4.5 8.2 4.5a2 2 0 0 0 0 4.5H12Zm0 0s1.6-4.5 3.8-4.5a2 2 0 0 1 0 4.5H12Z"/></svg>',
   shield:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 5 5.8v5.4c0 4.4 3 8 7 9.8 4-1.8 7-5.4 7-9.8V5.8L12 3Z"/><path d="m9.2 12 2 2 3.6-3.8"/></svg>',
   /* Иконки ниже раньше жили во второй функции icon() и не отрисовывались:
@@ -1343,6 +1344,11 @@ function profileScreen(){
     <button class="pf-row" onclick="passportScreen()">
       <span class="pf-ic">${icon('stamp')}</span>
       <span class="pf-tx"><b>Мои подарки</b><i>Полученные штампы и промокоды</i></span>
+      <span class="pf-go">›</span></button>
+
+    <button class="pf-row" onclick="shareQuest(event)">
+      <span class="pf-ic">${icon('share')}</span>
+      <span class="pf-tx"><b>Поделиться квестом</b><i>Отправить приглашение с видео</i></span>
       <span class="pf-go">›</span></button>
 
     <button class="pf-row" onclick="updateProfileLocation(event)">
@@ -1786,11 +1792,29 @@ function premiumRequestKey(){return `bbq-premium-request:${state?.session?.id||'
 function premiumRequestId(){const key=premiumRequestKey();try{const saved=localStorage.getItem(key);if(saved)return saved;const id=requestId();localStorage.setItem(key,id);return id}catch(_){return requestId()}}
 async function requestPremium(event,phone){if(offlineMode)return toast('Для отправки заявки нужен интернет');const button=event?.currentTarget;if(button){button.disabled=true;button.textContent='Отправляем заявку…'}try{const result=await api('/api/quest/premium/request',{method:'POST',body:JSON.stringify({request_id:premiumRequestId(),phone:phone||''})});state=result.data;cacheState(state);tg?.HapticFeedback?.notificationOccurred?.('success');passportScreen();toast('Заявка и ID участника отправлены в CRM BBBIKE')}catch(x){if(button){button.disabled=false;button.textContent='Подтвердить и отправить'}toast(x.message)}}
 function copyPremium(){copyText(state?.premium?.public_code||'','ID участника скопирован')}
-function sharePassport(){const text='Я собрал все 3 штампа в квесте BBBIKE по Красной Поляне. Присоединяйся!';
-  /* Ссылка ведёт прямо в мини-апп бота: раньше шарился голый домен,
-     и друг попадал на лендинг вместо квеста. */
+let shareInFlight=false;
+function shareQuestFallback(){
+  const text='Добро пожаловать в квест bb.bike 💚 Три точки, подарки партнёров и Premium на 30 дней.';
   const target=botUsername?`https://t.me/${botUsername}?startapp=quest`:location.origin;
-  const url=`https://t.me/share/url?url=${encodeURIComponent(target)}&text=${encodeURIComponent(text)}`;tg?.openTelegramLink?tg.openTelegramLink(url):window.open(url,'_blank','noopener')}
+  const url=`https://t.me/share/url?url=${encodeURIComponent(target)}&text=${encodeURIComponent(text)}`;
+  tg?.openTelegramLink?tg.openTelegramLink(url):window.open(url,'_blank','noopener')}
+async function shareQuest(event){
+  if(shareInFlight)return;
+  if(offlineMode)return toast('Для отправки видео нужен интернет');
+  if(!tg?.shareMessage||!tg?.isVersionAtLeast?.('8.0')){
+    toast('Обнови Telegram, чтобы отправлять приглашение с видео');
+    return shareQuestFallback()}
+  const button=event?.currentTarget,old=button?.innerHTML;
+  shareInFlight=true;if(button){button.disabled=true;button.setAttribute('aria-busy','true')}
+  const release=()=>{shareInFlight=false;if(button){button.disabled=false;button.removeAttribute('aria-busy');if(old!=null)button.innerHTML=old}};
+  try{
+    const result=await api('/api/quest/share/invite',{method:'POST',body:'{}'});
+    tg.HapticFeedback?.impactOccurred?.('light');
+    tg.shareMessage(result.prepared_message_id,sent=>{release();if(sent){tg.HapticFeedback?.notificationOccurred?.('success');toast('Приглашение отправлено')}});
+    setTimeout(release,30000)
+  }catch(x){release();toast(x.message||'Не удалось подготовить видео')}
+}
+function sharePassport(event){return shareQuest(event)}
 function closeModal(){modal.innerHTML='';root.inert=false;root.removeAttribute('aria-hidden');document.body.classList.remove('modal-open');modalTrigger?.focus?.();modalTrigger=null;syncBackButton();if(pendingAutoRender){pendingAutoRender=false;render(false)}}
 /* Классы экранов перечислены в одном месте: раньше syncBackButton искал
    .rules и .stamp-success, а разметка отдаёт .rules-screen и .stamp-screen,
