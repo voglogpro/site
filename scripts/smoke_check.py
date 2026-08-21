@@ -210,6 +210,10 @@ async def main() -> None:
     webapp = (root / "index.html").read_text(encoding="utf-8")
     assert "/api/quest/share/invite" in webapp and "tg.shareMessage" in webapp
     assert "Поделиться квестом" in webapp and "Отправить приглашение с видео" in webapp
+    admin_app = (root / "admin.html").read_text(encoding="utf-8")
+    assert "copyPremiumRequest" in admin_app and "copySupportConversation" in admin_app
+    assert "Копировать заявку" in admin_app and "Копировать всё обращение" in admin_app
+    assert "Telegram ID:" in admin_app and "ID участника:" in admin_app
     assert "function useMapgl(){return !!mapglKey()&&!!window.mapgl&&!window.__mapglFailed}" in webapp
     assert "function initGlMap(" in webapp and "new mapgl.Map(node,opts)" in webapp
     assert "2gis.ru/directions/tab/" in webapp and "2gis.ru/routeSearch/rsType" not in webapp
