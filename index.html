@@ -609,6 +609,22 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .pf-tx b{font:700 15px/1.2 var(--font)}
 .pf-tx i{font-style:normal;font-size:12.5px;line-height:1.35;color:var(--muted)}
 .pf-go{color:#4c5d52;font:700 19px/1 var(--font)}
+.pf-share{position:relative;isolation:isolate;min-height:92px;margin:5px 0 7px;padding:18px;
+  overflow:hidden;border-radius:22px;background:linear-gradient(135deg,#a3f516 0%,var(--green) 48%,#6fce00 100%);
+  box-shadow:0 12px 28px rgba(104,194,0,.2),inset 0 0 0 1px rgba(255,255,255,.3);
+  color:#071108;transition:transform .16s ease,box-shadow .16s ease,filter .16s ease}
+.pf-share:before{content:"";position:absolute;z-index:-1;width:150px;height:150px;right:-48px;top:-88px;
+  border-radius:50%;background:rgba(255,255,255,.2)}
+.pf-share .pf-ic{width:52px;height:52px;border-radius:17px;background:#071108;color:var(--green);
+  box-shadow:0 7px 18px rgba(7,17,8,.2)}
+.pf-share .pf-ic .ic{width:25px;height:25px}
+.pf-share .pf-tx{gap:5px}
+.pf-share .pf-tx b{font:800 18px/1.15 Montserrat,var(--font);letter-spacing:-.025em}
+.pf-share .pf-tx i{color:rgba(7,17,8,.7);font-size:13px;font-weight:650}
+.pf-share .pf-go{color:#071108;font-size:26px}
+.pf-share:active{transform:scale(.975);background:linear-gradient(135deg,#98e810,var(--green) 55%,#69c400);
+  box-shadow:0 7px 18px rgba(104,194,0,.16),inset 0 0 0 1px rgba(255,255,255,.25)}
+.pf-share:disabled{opacity:.68;filter:saturate(.7);cursor:wait}
 .pf-note{margin:0 4px;color:var(--muted);font-size:12px;line-height:1.45;text-align:center}
 
 
@@ -1346,7 +1362,7 @@ function profileScreen(){
       <span class="pf-tx"><b>Мои подарки</b><i>Полученные штампы и промокоды</i></span>
       <span class="pf-go">›</span></button>
 
-    <button class="pf-row" onclick="shareQuest(event)">
+    <button class="pf-row pf-share" onclick="shareQuest(event)">
       <span class="pf-ic">${icon('share')}</span>
       <span class="pf-tx"><b>Поделиться квестом</b><i>Отправить приглашение с видео</i></span>
       <span class="pf-go">›</span></button>
@@ -1810,7 +1826,7 @@ async function shareQuest(event){
   try{
     const result=await api('/api/quest/share/invite',{method:'POST',body:'{}'});
     tg.HapticFeedback?.impactOccurred?.('light');
-    tg.shareMessage(result.prepared_message_id,sent=>{release();if(sent){tg.HapticFeedback?.notificationOccurred?.('success');toast('Приглашение отправлено')}});
+    tg.shareMessage(result.prepared_message_id,sent=>{release();if(sent){tg.HapticFeedback?.notificationOccurred?.('success');toast('Приглашение отправлено')}else{tg.HapticFeedback?.notificationOccurred?.('error');toast('Telegram не отправил видео. Попробуй ещё раз')}});
     setTimeout(release,30000)
   }catch(x){release();toast(x.message||'Не удалось подготовить видео')}
 }

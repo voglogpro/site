@@ -186,15 +186,27 @@ async def main() -> None:
     leaflet = (root / "static" / "vendor" / "leaflet-1.9.4.asset").read_bytes()
     assert hashlib.sha256(leaflet.rstrip(b"\n")).hexdigest() == "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a"
     invite_video = (root / "static" / production.QUEST_SHARE_VIDEO).read_bytes()
-    assert len(invite_video) == 28_718_520
-    assert invite_video[4:12] == b"ftypmp42"
+    assert 1_000_000 < len(invite_video) < 20_000_000
+    assert invite_video[4:8] == b"ftyp"
+    assert 0 < invite_video.find(b"moov") < invite_video.find(b"mdat")
     assert len(production.QUEST_SHARE_TEXT) <= 1024
+    assert production.QUEST_SHARE_TEXT.startswith("BBBIKE КВЕСТ 💚")
     share_settings = production.load_settings()
     share_result = production.quest_share_result(share_settings, "quest_bot", "build abc123")
     assert share_result.mime_type == "video/mp4"
     assert share_result.video_url.endswith("/static/bbbike-quest-invite.mp4?v=abc123")
     assert share_result.caption == production.QUEST_SHARE_TEXT
     assert share_result.reply_markup.inline_keyboard[0][0].url == "https://t.me/quest_bot?startapp=quest"
+    class SetupBot:
+        name = ""
+        async def set_my_name(self, name): self.name = name
+        async def set_my_commands(self, *_args, **_kwargs): pass
+        async def set_my_short_description(self, *_args, **_kwargs): pass
+        async def set_my_description(self, *_args, **_kwargs): pass
+        async def set_chat_menu_button(self, *_args, **_kwargs): pass
+    setup_bot = SetupBot()
+    await production.setup_bot_commands(setup_bot, share_settings)
+    assert setup_bot.name == "BBBIKE КВЕСТ"
     webapp = (root / "index.html").read_text(encoding="utf-8")
     assert "/api/quest/share/invite" in webapp and "tg.shareMessage" in webapp
     assert "Поделиться квестом" in webapp and "Отправить приглашение с видео" in webapp

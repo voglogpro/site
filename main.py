@@ -133,7 +133,9 @@ DEFAULT_MAPGL_LIGHT_STYLE = "c080bb6a-8134-4993-93a1-5b4d8c36a59b"
 DEFAULT_MAPGL_DARK_STYLE = "9643e8da-173b-4359-9fee-8a1fe58e68aa"
 
 QUEST_SHARE_VIDEO = "bbbike-quest-invite.mp4"
-QUEST_SHARE_TEXT = """Добро пожаловать в квест bb.bike 💚
+QUEST_SHARE_TEXT = """BBBIKE КВЕСТ 💚
+
+Добро пожаловать в квест bb.bike 💚
 
 Гуляй по Красной Поляне, отмечайся на локациях, получай подарки от наших партнёров. А за завершённый квест — МЕСЯЦ бесплатной активации Bibibike.
 
@@ -2324,6 +2326,7 @@ def admin_keyboard(settings: Settings, user_id: int = 0) -> InlineKeyboardMarkup
 
 
 async def setup_bot_commands(bot: Bot, settings: Settings) -> None:
+    await bot.set_my_name("BBBIKE КВЕСТ")
     await bot.set_my_commands([
         BotCommand(command="start", description="Открыть квест"),
         BotCommand(command="progress", description="Мой прогресс"),
