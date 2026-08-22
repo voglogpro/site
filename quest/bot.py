@@ -34,10 +34,10 @@ async def setup_bot_commands(bot: Bot, settings: Settings) -> None:
         BotCommand(command="admin", description="Панель управления"),
         BotCommand(command="participant", description="Статус участника (админ)"),
     ])
-    await bot.set_my_short_description("Квест BBBIKE по трём точкам Красной Поляны")
+    await bot.set_my_short_description("Квест Бибибайк по трём точкам Красной Поляны")
     await bot.set_my_description(
         "Выбирай партнёрские точки в любом порядке, строй маршрут, ставь QR-штампы "
-        "и забирай подарки. После трёх точек — Premium BBBIKE."
+        "и забирай подарки. После трёх точек — Подписка 30 дней."
     )
     await bot.set_chat_menu_button(
         menu_button=MenuButtonWebApp(text="Открыть квест", web_app=WebAppInfo(url=settings.webapp_url))
@@ -52,12 +52,12 @@ def build_router(service: QuestService, settings: Settings) -> Router:
         if message.chat.type != "private" or not message.from_user:
             return
         text = (
-            "<b>Добро пожаловать в квест BBBIKE по Красной Поляне</b>\n\n"
+            "<b>Добро пожаловать в квест Бибибайк по Красной Поляне</b>\n\n"
             "Здесь всё просто:\n"
             "1. Выбери любую из трёх точек.\n"
             "2. Построй маршрут в Яндекс Картах или 2ГИС.\n"
             "3. На месте отсканируй QR и забери подарок.\n\n"
-            "Три штампа откроют Premium BBBIKE на 30 дней. "
+            "Три штампа откроют подписку на 30 дней для бесплатного старта на байке. "
             "Во время поездки смотри в телефон только после полной остановки."
         )
         await message.answer(text, reply_markup=quest_keyboard(settings))
@@ -104,7 +104,7 @@ def build_router(service: QuestService, settings: Settings) -> Router:
             f"Прогресс: {progress}/3\n"
             f"Статус: {item['status']}\n"
             f"Проверка: {item['integrity_status']}\n"
-            f"Premium: {item['premium_status'] or 'не назначен'}"
+            f"Подписка 30 дней: {item['premium_status'] or 'не назначена'}"
         )
 
     return router

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-"""Квест BBBIKE — Telegram-бот с мини-приложением.
+"""Квест «Бибибайк» — Telegram-бот с мини-приложением.
 
 Единый файл: настройки, база, безопасность, логика квеста, бот и веб-сервер.
 Разделы идут в порядке зависимостей и отмечены заголовками — ищи по названию
@@ -133,18 +133,18 @@ DEFAULT_MAPGL_LIGHT_STYLE = "c080bb6a-8134-4993-93a1-5b4d8c36a59b"
 DEFAULT_MAPGL_DARK_STYLE = "9643e8da-173b-4359-9fee-8a1fe58e68aa"
 
 QUEST_SHARE_VIDEO = "bbbike-quest-invite.mp4"
-QUEST_SHARE_TEXT = """BBBIKE КВЕСТ 💚
+QUEST_SHARE_TEXT = """Бибибайк КВЕСТ 💚
 
-Добро пожаловать в квест bb.bike 💚
+Добро пожаловать в квест «Бибибайк» 💚
 
-Гуляй по Красной Поляне, отмечайся на локациях, получай подарки от наших партнёров. А за завершённый квест — МЕСЯЦ бесплатной активации Bibibike.
+Гуляй по Красной Поляне, отмечайся на локациях, получай подарки от наших партнёров. А за завершённый квест — бесплатная подписка «Бибибайк» на 30 дней для старта на байке.
 
 Здесь всё просто:
 1. Выбери любую из трёх точек.
 2. Построй маршрут в Яндекс Картах или 2ГИС.
 3. На месте отсканируй QR через мини-приложение и забери подарок.
 
-Как только отсканировано 3 уникальных QR-кода — квест считается пройденным. А в подарок — Premium bb.bike на 30 дней 🛵
+Как только отсканировано 3 уникальных QR-кода — квест считается пройденным. А в подарок — Подписка 30 дней «Бибибайк» 🛵
 
 Во время поездки следи за дорогой, а телефон используй только после полной остановки."""
 
@@ -159,15 +159,15 @@ def quest_share_result(settings: "Settings", bot_username: str, build_version: s
         video_url=f"{base}/static/{QUEST_SHARE_VIDEO}?v={version}",
         mime_type="video/mp4",
         thumbnail_url=f"{base}/static/bb-bike-logo.jpg?v={version}",
-        title="Квест bb.bike · Красная Поляна",
-        description="Три точки, подарки партнёров и Premium на 30 дней",
+        title="Квест «Бибибайк» · Красная Поляна",
+        description="Три точки, подарки партнёров и Подписка 30 дней",
         caption=QUEST_SHARE_TEXT,
         parse_mode=None,
         video_width=1072,
         video_height=1920,
         video_duration=34,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="Открыть квест bb.bike", url=open_url)
+            InlineKeyboardButton(text="Открыть квест «Бибибайк»", url=open_url)
         ]]),
     )
 
@@ -268,7 +268,7 @@ def load_settings() -> Settings:
         map_tile_url=os.getenv("MAP_TILE_URL", "https://tile.openstreetmap.org/{z}/{x}/{y}.png"),
         # Подпись на карте. Указание OpenStreetMap обязательно по лицензии
         # тайлов, но выводится компактно и рядом с брендом.
-        map_attribution=os.getenv("MAP_ATTRIBUTION", "BBBIKE · © OpenStreetMap"),
+        map_attribution=os.getenv("MAP_ATTRIBUTION", "Бибибайк · © OpenStreetMap"),
         # Несколько подложек подряд. Один источник — единая точка отказа:
         # если он недоступен из сети гостя (роуминг, VPN, блокировка), карта
         # остаётся пустой. Приложение перебирает список сверху вниз.
@@ -320,8 +320,8 @@ CREATE TABLE IF NOT EXISTS campaigns (
     city TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','active','paused','ended')),
     session_duration_min INTEGER NOT NULL DEFAULT 240 CHECK(session_duration_min BETWEEN 30 AND 1440),
-    premium_title TEXT NOT NULL DEFAULT 'Premium BBBIKE на 30 дней',
-    premium_instruction TEXT NOT NULL DEFAULT 'Нажми «Получить Premium». Команда BBBIKE проверит квест и подключит подписку на 30 дней.',
+    premium_title TEXT NOT NULL DEFAULT 'Подписка 30 дней',
+    premium_instruction TEXT NOT NULL DEFAULT 'Нажми «Получить подписку». Команда Бибибайк проверит квест и подключит бесплатную подписку на 30 дней для старта на байке.',
     starts_at TEXT,
     ends_at TEXT,
     created_at TEXT NOT NULL,
@@ -572,7 +572,7 @@ class Database:
             await self._db.execute("ALTER TABLE session_points ADD COLUMN reward_redeem_request_id TEXT")
         except Exception:
             pass
-        # Premium v3: completion unlocks the reward, while an explicit user
+        # Subscription v3: completion unlocks the reward, while an explicit user
         # action creates the support request. Every ALTER is idempotent for
         # already-running SQLite volumes.
         for column, definition in (
@@ -581,7 +581,7 @@ class Database:
             ("support_notified_at", "TEXT"),
             ("support_notification_claim", "TEXT"),
             ("support_notification_claimed_at", "TEXT"),
-            # Телефон участника: по нему поддержка BBBIKE привязывает
+            # Телефон участника: по нему поддержка Бибибайк привязывает
             # подписку. Хранится только у завершивших квест.
             ("phone", "TEXT"),
         ):
@@ -599,13 +599,13 @@ class Database:
             "INSERT INTO schema_meta(key,value) VALUES('version','2') ON CONFLICT(key) DO UPDATE SET value=excluded.value"
         )
         await self._db.execute(
-            """UPDATE campaigns SET premium_title='Premium BBBIKE на 30 дней'
-               WHERE premium_title IN ('Премиум bb.bike на 30 дней','Premium bb.bike на 30 дней')"""
+            """UPDATE campaigns SET premium_title='Подписка 30 дней'
+               WHERE premium_title IN ('Премиум bb.bike на 30 дней','Premium bb.bike на 30 дней','Premium BBBIKE на 30 дней')"""
         )
         await self._db.execute(
             """UPDATE campaigns
-               SET premium_instruction='Нажми «Получить Premium». Команда BBBIKE проверит квест и подключит подписку на 30 дней.'
-               WHERE premium_instruction='Покажи этот экран администратору. Премиум будет оформлен вручную.'"""
+               SET premium_instruction='Нажми «Получить подписку». Команда Бибибайк проверит квест и подключит бесплатную подписку на 30 дней для старта на байке.'
+               WHERE premium_instruction IN ('Покажи этот экран администратору. Премиум будет оформлен вручную.','Нажми «Получить Premium». Команда BBBIKE проверит квест и подключит подписку на 30 дней.')"""
         )
         await self._db.commit()
         check = await (await self._db.execute("PRAGMA quick_check")).fetchone()
@@ -812,7 +812,7 @@ def validate_admin_ticket(ticket: str, settings: Settings, now: int | None = Non
     return user_id if hmac.compare_digest(expected, received) else None
 
 
-SERVICE_WORKER_JS = r"""/* Service worker квеста BBBIKE.
+SERVICE_WORKER_JS = r"""/* Service worker квеста Бибибайк.
  *
  * Зачем: в Красной Поляне связь пропадает целыми участками. Без этого файла
  * закрытое и заново открытое мини-приложение не грузится вообще — не открывается
@@ -948,7 +948,7 @@ TILE_PAPER = 241          # бежевый фон OpenStreetMap
 # Готовые палитры. Выбирается переменной TILE_PALETTE, менять код не нужно.
 #   night     — глубокий графит, спокойные дороги (по умолчанию)
 #   graphite  — светлее и контрастнее, город читается лучше
-#   forest    — тёплый тёмно-зелёный под фирменный цвет bb.bike
+#   forest    — тёплый тёмно-зелёный под фирменный цвет Бибибайк
 TILE_PALETTES = {
     "night":    {"bg": (18, 20, 23),  "ink": (186, 194, 205), "ink_max": 150,
                  "gain": 6.0, "water": (18, 34, 52),  "park": (18, 32, 22)},
@@ -1477,7 +1477,7 @@ class QuestService:
                             completed_seq = current["seq"]
             if rejected:
                 if unknown_code:
-                    raise QuestError("unknown_qr", "Такого кода нет. Проверь зелёную табличку BBBIKE у стойки.", 409)
+                    raise QuestError("unknown_qr", "Такого кода нет. Проверь зелёную табличку Бибибайк у стойки.", 409)
                 raise QuestError("wrong_qr", "Это код другой точки. Проверь табличку у стойки.", 409)
             async with self.db.transaction() as db:
                 result = await self._state_in_tx(db, identity.user_id)
@@ -1591,7 +1591,7 @@ class QuestService:
         return conversation_id
 
     async def request_premium(self, identity: TelegramIdentity, request_id: str, phone: str = "") -> dict:
-        """Create one explicit and retry-safe Premium request after completion."""
+        """Create one explicit and retry-safe subscription request after completion."""
         request_id = (request_id or "").strip()
         phone = normalize_phone(phone)
         if not phone:
@@ -1611,7 +1611,7 @@ class QuestService:
                 if not row or row["session_status"] != "completed":
                     raise QuestError("premium_locked", "Сначала заверши все три точки квеста.", 409)
                 if row["status"] == "cancelled":
-                    raise QuestError("premium_cancelled", "Эта заявка отменена. Напиши в поддержку BBBIKE.", 409)
+                    raise QuestError("premium_cancelled", "Эта заявка отменена. Напиши в поддержку Бибибайк.", 409)
                 # Телефон обновляем и при повторной отправке: человек мог
                 # ошибиться в цифре и прислать заявку заново.
                 if phone:
@@ -1642,7 +1642,7 @@ class QuestService:
                        ) VALUES(?,'system','premium_request',?,?,?)""",
                     (
                         conversation_id,
-                        "Заявка на Premium 30 дней. "
+                        "Заявка на подписку 30 дней. "
                         f"ID участника: {row['public_code']}. Телефон: "
                         f"{phone or (row['phone'] if 'phone' in row.keys() else '') or 'не указан'}.",
                         f"premium:{row['session_id']}",
@@ -2261,9 +2261,9 @@ class QuestService:
                 (session_id,),
             )).fetchone()
             if not row:
-                raise QuestError("premium_not_found", "Заявка на премиум не найдена.", 404)
+                raise QuestError("premium_not_found", "Заявка на подписку не найдена.", 404)
             if not row["requested_at"]:
-                raise QuestError("premium_not_requested", "Участник ещё не отправил заявку на Premium.", 409)
+                raise QuestError("premium_not_requested", "Участник ещё не отправил заявку на подписку.", 409)
             if row["status"] not in {"pending", "issued"}:
                 raise QuestError("premium_cancelled", "Заявка отменена и не может быть выдана.", 409)
             newly_issued = row["status"] == "pending"
@@ -2326,7 +2326,7 @@ def admin_keyboard(settings: Settings, user_id: int = 0) -> InlineKeyboardMarkup
 
 
 async def setup_bot_commands(bot: Bot, settings: Settings) -> None:
-    await bot.set_my_name("BBBIKE КВЕСТ")
+    await bot.set_my_name("Бибибайк КВЕСТ")
     await bot.set_my_commands([
         BotCommand(command="start", description="Открыть квест"),
         BotCommand(command="progress", description="Мой прогресс"),
@@ -2336,10 +2336,10 @@ async def setup_bot_commands(bot: Bot, settings: Settings) -> None:
         BotCommand(command="participant", description="Статус участника (админ)"),
         BotCommand(command="admins", description="Кто имеет доступ к CRM (админ)"),
     ])
-    await bot.set_my_short_description("Квест BBBIKE по трём точкам Красной Поляны")
+    await bot.set_my_short_description("Квест Бибибайк по трём точкам Красной Поляны")
     await bot.set_my_description(
         "Выбирай партнёрские точки в любом порядке, строй маршрут, ставь QR-штампы "
-        "и забирай подарки. После трёх точек — Premium BBBIKE."
+        "и забирай подарки. После трёх точек — Подписка 30 дней."
     )
     await bot.set_chat_menu_button(
         menu_button=MenuButtonWebApp(text="Открыть квест", web_app=WebAppInfo(url=settings.webapp_url))
@@ -2359,7 +2359,7 @@ def build_router(service: QuestService, settings: Settings) -> Router:
         if payload == "support":
             await service.activate_support(identity_from_message(message))
             await message.answer(
-                "<b>Поддержка BBBIKE</b>\n\n"
+                "<b>Поддержка Бибибайк</b>\n\n"
                 "Напиши одним или несколькими сообщениями, что случилось. "
                 "Оператор увидит обращение в CRM и ответит прямо сюда.\n\n"
                 "Чтобы закончить диалог, отправь /cancel."
@@ -2367,25 +2367,25 @@ def build_router(service: QuestService, settings: Settings) -> Router:
             return
         if payload.startswith("bbq-"):
             await message.answer(
-                "<b>Ты нашёл точку квеста BBBIKE</b> 💚\n\n"
+                "<b>Ты нашёл точку квеста Бибибайк</b> 💚\n\n"
                 "Это одна из трёх партнёрских точек в Красной Поляне. "
                 "Открой приложение — отметка засчитается сама, а подарок партнёра "
                 "сохранится в квесте.\n\n"
-                "Собери все три штампа и получи Premium BBBIKE на 30 дней.",
+                "Собери все три штампа и получи бесплатную подписку на 30 дней для старта на байке.",
                 reply_markup=quest_keyboard(settings),
             )
             return
         text = (
-            "<b>Добро пожаловать в квест BBBIKE</b> 💚\n\n"
+            "<b>Добро пожаловать в квест Бибибайк</b> 💚\n\n"
             "Гуляй по Красной Поляне, отмечайся на локациях, получай подарки "
-            "от наших партнёров. А за завершённый квест — МЕСЯЦ бесплатной "
-            "активации BBBIKE.\n\n"
+            "от наших партнёров. А за завершённый квест — Подписка 30 дней "
+            "для бесплатного старта на байке.\n\n"
             "Здесь всё просто:\n"
             "1. Выбери любую из трёх точек.\n"
             "2. Построй маршрут в Яндекс Картах или 2ГИС.\n"
             "3. На месте отсканируй QR через мини-приложение и забери подарок.\n\n"
             "Как только отсканировано 3 уникальных QR-кода — квест считается "
-            "пройденным. А в подарок — Premium BBBIKE на 30 дней 🛵\n\n"
+            "пройденным. А в подарок — Подписка 30 дней для бесплатного старта на байке 🛵\n\n"
             "Во время поездки следи за дорогой, а телефон используй только "
             "после полной остановки."
         )
@@ -2410,7 +2410,7 @@ def build_router(service: QuestService, settings: Settings) -> Router:
             return
         await service.activate_support(identity_from_message(message))
         await message.answer(
-            "<b>Поддержка BBBIKE</b>\n\n"
+            "<b>Поддержка Бибибайк</b>\n\n"
             "Напиши сообщение — оно сразу появится у оператора в CRM. "
             "Ответ придёт в этот чат.\n\n"
             "Чтобы закончить диалог, отправь /cancel."
@@ -2541,7 +2541,7 @@ def build_router(service: QuestService, settings: Settings) -> Router:
         try:
             await bot.send_message(
                 user_id,
-                "<b>Тебе открыли доступ к CRM квеста BBBIKE</b>\n\n"
+                "<b>Тебе открыли доступ к CRM квеста Бибибайк</b>\n\n"
                 "Панель открывается командой /admin в этом чате. "
                 "Ссылка персональная и живёт ограниченное время — "
                 "если истечёт, просто вызови команду снова.",
@@ -2590,7 +2590,7 @@ def build_router(service: QuestService, settings: Settings) -> Router:
             f"Прогресс: {progress}/3\n"
             f"Статус: {item['status']}\n"
             f"Проверка: {item['integrity_status']}\n"
-            f"Premium: {item['premium_status'] or 'не назначен'}"
+            f"Подписка 30 дней: {item['premium_status'] or 'не назначена'}"
         )
 
     @router.message(F.text, F.chat.type == "private")
@@ -2602,7 +2602,7 @@ def build_router(service: QuestService, settings: Settings) -> Router:
         )
         if stored:
             await message.answer(
-                "Сообщение отправлено оператору BBBIKE ✅\n"
+                "Сообщение отправлено оператору Бибибайк ✅\n"
                 "Можно дописать детали следующим сообщением или завершить диалог командой /cancel."
             )
 
@@ -2932,7 +2932,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         page = (
             "<!doctype html><html lang=\"ru\"><head><meta charset=\"utf-8\">"
             "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-            "<title>Квест BBBIKE · Красная Поляна</title>"
+            "<title>Квест Бибибайк · Красная Поляна</title>"
             "<style>body{margin:0;min-height:100vh;display:grid;place-content:center;justify-items:center;"
             "gap:18px;padding:28px;background:#07110b;color:#f2f7f1;text-align:center;"
             "font:16px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif}"
@@ -2940,7 +2940,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
             "p{margin:0;max-width:340px;color:#a9bbad}"
             "a{margin-top:6px;padding:15px 26px;border-radius:14px;background:#8fe300;color:#07110b;"
             "font-weight:800;text-decoration:none}</style></head><body>"
-            "<h1>Ты нашёл точку квеста BBBIKE</h1>"
+            "<h1>Ты нашёл точку квеста Бибибайк</h1>"
             "<p>Это одна из трёх партнёрских точек в Красной Поляне. Открой квест в Telegram — "
             "отметка засчитается сама, а подарок партнёра сохранится в квесте.</p>"
             f'<a href="{safe_target}">Открыть в Telegram</a>'
@@ -3065,8 +3065,8 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         claim = result.pop("notification_claim")
         session_id = result.pop("session_id")
         draft = (
-            "Здравствуйте! Я завершил квест BBBIKE в Красной Поляне и хочу получить "
-            f"Premium на 30 дней. ID участника: {participant['public_code']}. "
+            "Здравствуйте! Я завершил квест Бибибайк в Красной Поляне и хочу получить "
+            f"подписку на 30 дней. ID участника: {participant['public_code']}. "
             f"Телефон для подписки: {participant.get('phone') or 'не указан'}."
         )
         notified = bool(result["data"].get("premium", {}).get("support_notified_at"))
@@ -3076,7 +3076,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
                 target = int(settings.support_chat_id)
             username = f"@{participant['username']}" if participant["username"] else "без username"
             message = (
-                "<b>Новая заявка BBBIKE Premium</b>\n\n"
+                "<b>Новая заявка Бибибайк · Подписка 30 дней</b>\n\n"
                 f"Участник: {html.escape(participant['display_name'])}\n"
                 f"Telegram: {html.escape(username)} · <code>{participant['user_id']}</code>\n"
                 f"ID участника: <code>{html.escape(participant['public_code'])}</code>\n"
@@ -3087,7 +3087,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
                 await bot.send_message(target, message)
                 notified = True
             except Exception as exc:
-                log.warning("Не удалось отправить заявку Premium session=%s: %s", session_id, type(exc).__name__)
+                log.warning("Не удалось отправить заявку на подписку session=%s: %s", session_id, type(exc).__name__)
                 notified = False
             await service.finish_premium_notification(session_id, claim, notified)
             result["data"] = await service.state(identity)
@@ -3150,7 +3150,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         try:
             sent = await bot.send_message(
                 target["user_id"],
-                "<b>Ответ поддержки BBBIKE</b>\n\n" + html.escape(reply),
+                "<b>Ответ поддержки Бибибайк</b>\n\n" + html.escape(reply),
             )
         except Exception as exc:
             log.warning(
@@ -3263,7 +3263,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         try:
             await bot.send_message(
                 user_id,
-                "<b>Тебе открыли доступ к CRM квеста BBBIKE</b>\n\n"
+                "<b>Тебе открыли доступ к CRM квеста Бибибайк</b>\n\n"
                 "Панель открывается командой /admin в этом чате.",
             )
             notified = True
@@ -3286,13 +3286,13 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
             try:
                 await bot.send_message(
                     item["user_id"],
-                    "<b>Premium BBBIKE подтверждён</b>\n\n"
+                    "<b>Подписка 30 дней подтверждена</b>\n\n"
                     f"Заявка <code>{html.escape(item['public_code'])}</code> обработана. "
-                    "Если подписка не появилась, напиши в поддержку BBBIKE.",
+                    "Если подписка не появилась, напиши в поддержку Бибибайк.",
                 )
                 notified = True
             except Exception as exc:
-                log.warning("Не удалось уведомить о Premium user=%s: %s", item["user_id"], type(exc).__name__)
+                log.warning("Не удалось уведомить о подписке user=%s: %s", item["user_id"], type(exc).__name__)
         return json_response({"data": await service.admin_overview(), "notified": notified})
 
     async def admin_link_qr(request):
@@ -3318,12 +3318,12 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         writer = csv.writer(output, delimiter=";")
         writer.writerow([
             "Telegram ID", "Username", "Имя", "Старт", "Завершение",
-            "Заявка Premium", "ID участника", "Телефон", "Статус", "Выдано",
+            "Заявка на подписку 30 дней", "ID участника", "Телефон", "Статус", "Выдано",
         ])
         for row in rows:
             writer.writerow([_csv_safe(row[key]) for key in row.keys()])
         body = "\ufeff" + output.getvalue()
-        return web.Response(body=body.encode("utf-8"), content_type="text/csv", headers={"Content-Disposition": 'attachment; filename="bbbike-premium.csv"', "Cache-Control": "no-store"})
+        return web.Response(body=body.encode("utf-8"), content_type="text/csv", headers={"Content-Disposition": 'attachment; filename="bibibike-subscription-30-days.csv"', "Cache-Control": "no-store"})
 
     app.router.add_get("/", index)
     app.router.add_get("/index.html", index)
@@ -3472,7 +3472,7 @@ async def run() -> None:
     await runner.cleanup()
     await bot.session.close()
     await db.close()
-    log.info("BBBIKE Quest остановлен штатно")
+    log.info("Квест Бибибайк остановлен штатно")
 
 
 if __name__ == "__main__":

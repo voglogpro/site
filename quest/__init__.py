@@ -1,3 +1,3 @@
-"""BBBIKE Krasnaya Polyana quest domain package."""
+"""Доменный пакет квеста «Бибибайк» в Красной Поляне."""
 
 __version__ = "1.0.0"

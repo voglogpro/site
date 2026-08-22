@@ -190,7 +190,7 @@ async def main() -> None:
     assert invite_video[4:8] == b"ftyp"
     assert 0 < invite_video.find(b"moov") < invite_video.find(b"mdat")
     assert len(production.QUEST_SHARE_TEXT) <= 1024
-    assert production.QUEST_SHARE_TEXT.startswith("BBBIKE КВЕСТ 💚")
+    assert production.QUEST_SHARE_TEXT.startswith("Бибибайк КВЕСТ 💚")
     share_settings = production.load_settings()
     share_result = production.quest_share_result(share_settings, "quest_bot", "build abc123")
     assert share_result.mime_type == "video/mp4"
@@ -206,7 +206,7 @@ async def main() -> None:
         async def set_chat_menu_button(self, *_args, **_kwargs): pass
     setup_bot = SetupBot()
     await production.setup_bot_commands(setup_bot, share_settings)
-    assert setup_bot.name == "BBBIKE КВЕСТ"
+    assert setup_bot.name == "Бибибайк КВЕСТ"
     webapp = (root / "index.html").read_text(encoding="utf-8")
     assert "/api/quest/share/invite" in webapp and "tg.shareMessage" in webapp
     assert "Поделиться квестом" in webapp and "Отправить приглашение с видео" in webapp
@@ -240,5 +240,5 @@ async def main() -> None:
     assert validate_admin_ticket(ticket, settings, now=1_000 + settings.admin_ticket_ttl_sec + 1) is None
     for order in itertools.permutations(range(3)): await scenario(order)
     await production_reward_scenario()
-    print("PASS: persistence, maps, 6 point orders, QR idempotency, password session, one-time rewards, Premium, CRM support and native video sharing")
+    print("PASS: persistence, maps, 6 point orders, QR idempotency, password session, one-time rewards, 30-day subscription, CRM support and native video sharing")
 if __name__ == "__main__": asyncio.run(main())

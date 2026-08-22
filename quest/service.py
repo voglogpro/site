@@ -621,7 +621,7 @@ class QuestService:
         async with self.db.transaction() as db:
             row = await (await db.execute("SELECT id FROM premium_entitlements WHERE session_id=?", (session_id,))).fetchone()
             if not row:
-                raise QuestError("premium_not_found", "Заявка на премиум не найдена.", 404)
+                raise QuestError("premium_not_found", "Заявка на подписку не найдена.", 404)
             await db.execute("UPDATE premium_entitlements SET status='issued',issued_at=? WHERE session_id=?", (iso(), session_id))
             await db.execute("INSERT INTO admin_audit(admin_id,action,entity_type,entity_id,after_json,created_at) VALUES(?,?,?,?,?,?)", (admin_id, "premium.issue", "session", session_id, '{"status":"issued"}', iso()))
 

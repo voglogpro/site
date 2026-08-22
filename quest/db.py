@@ -21,8 +21,8 @@ CREATE TABLE IF NOT EXISTS campaigns (
     city TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','active','paused','ended')),
     session_duration_min INTEGER NOT NULL DEFAULT 240 CHECK(session_duration_min BETWEEN 30 AND 1440),
-    premium_title TEXT NOT NULL DEFAULT 'Premium BBBIKE на 30 дней',
-    premium_instruction TEXT NOT NULL DEFAULT 'Нажми «Получить Premium». Команда BBBIKE проверит квест и подключит подписку на 30 дней.',
+    premium_title TEXT NOT NULL DEFAULT 'Подписка 30 дней',
+    premium_instruction TEXT NOT NULL DEFAULT 'Нажми «Получить подписку». Команда Бибибайк проверит квест и подключит бесплатную подписку на 30 дней для старта на байке.',
     starts_at TEXT,
     ends_at TEXT,
     created_at TEXT NOT NULL,
@@ -206,9 +206,13 @@ class Database:
             "INSERT INTO schema_meta(key,value) VALUES('version','2') ON CONFLICT(key) DO UPDATE SET value=excluded.value"
         )
         await self._db.execute(
+            """UPDATE campaigns SET premium_title='Подписка 30 дней'
+               WHERE premium_title IN ('Премиум bb.bike на 30 дней','Premium bb.bike на 30 дней','Premium BBBIKE на 30 дней')"""
+        )
+        await self._db.execute(
             """UPDATE campaigns
-               SET premium_instruction='Нажми «Получить Premium». Команда BBBIKE проверит квест и подключит подписку на 30 дней.'
-               WHERE premium_instruction='Покажи этот экран администратору. Премиум будет оформлен вручную.'"""
+               SET premium_instruction='Нажми «Получить подписку». Команда Бибибайк проверит квест и подключит бесплатную подписку на 30 дней для старта на байке.'
+               WHERE premium_instruction IN ('Покажи этот экран администратору. Премиум будет оформлен вручную.','Нажми «Получить Premium». Команда BBBIKE проверит квест и подключит подписку на 30 дней.')"""
         )
         await self._db.commit()
         check = await (await self._db.execute("PRAGMA quick_check")).fetchone()
