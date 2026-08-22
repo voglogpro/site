@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#06130b">
 <title>Квест Красной Поляны · Бибибайк</title>
+  <link rel="preconnect" href="https://mapgl.2gis.com" crossorigin>
+  <link rel="preconnect" href="https://keys.api.2gis.com" crossorigin>
+  <link rel="preconnect" href="https://styles.api.2gis.com" crossorigin>
+  <link rel="dns-prefetch" href="//mapgl.2gis.com">
   <link rel="preload" href="/static/bb-bike-scooter-cutout.png" as="image" type="image/png" fetchpriority="high">
   <style>
 /* Стили встроены в файл: отдельный app.css больше не нужен. */
@@ -781,10 +785,10 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 @keyframes road-move{0%{transform:translate3d(98px,0,0)}55%{transform:translate3d(-102px,0,0)}100%{transform:translate3d(-102px,0,0)}}
 .splash.css-motion .splash-glow{animation:glow-pulse 2.6s ease-in-out 6}
 .splash.css-motion .splash-ring{animation:ring-spin 1.5s linear 10}
-.splash.css-motion .splash-bike-wrap{animation:bike-scene 5s cubic-bezier(.2,.75,.2,1) 3}
-.splash.css-motion .splash-headlight{animation:headlight-wink 5s linear 3}
-.splash.css-motion .splash-beam{animation:beam-wink 5s linear 3}
-.splash.css-motion .splash-road i{animation:road-move 5s cubic-bezier(.2,.7,.25,1) 3}
+.splash.css-motion .splash-bike-wrap{animation:bike-scene 3.2s cubic-bezier(.2,.75,.2,1) 8}
+.splash.css-motion .splash-headlight{animation:headlight-wink 3.2s linear 8}
+.splash.css-motion .splash-beam{animation:beam-wink 3.2s linear 8}
+.splash.css-motion .splash-road i{animation:road-move 3.2s cubic-bezier(.2,.7,.25,1) 8}
 
 .splash{position:fixed;inset:0;z-index:3000;display:grid;place-items:center;
   background:radial-gradient(120% 80% at 50% 18%,#123018 0%,#07110b 62%,#050d08 100%);
@@ -808,18 +812,6 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 @media (prefers-reduced-motion:reduce){
   .splash-inner{animation-duration:.2s}.splash-speedline,.splash-spark{display:none}
 }
-
-/* Карта никогда не показывается как пустой зелёный экран: этот слой остаётся до первого
-   готового кадра 2ГИС и растворяется только по событию idle. */
-.map-loading-layer{position:absolute;z-index:510;inset:0;display:grid;place-content:center;justify-items:center;
-  gap:13px;padding:24px;text-align:center;pointer-events:none;
-  background:radial-gradient(circle at 50% 42%,rgba(24,72,34,.96),rgba(7,15,10,.985) 66%);
-  transition:opacity .32s ease,visibility .32s ease}
-.map-loading-layer.done{opacity:0;visibility:hidden}
-.map-loading-spinner{width:42px;height:42px;border-radius:50%;border:2px solid rgba(143,227,0,.16);
-  border-top-color:var(--green);animation:map-loading-spin .8s linear infinite;box-shadow:0 0 22px rgba(143,227,0,.14)}
-.map-loading-layer b{font:800 14px/1.2 var(--font);color:#ecf8ea}.map-loading-layer span{max-width:260px;color:#9eb1a1;font:12px/1.4 var(--font)}
-@keyframes map-loading-spin{to{transform:rotate(360deg)}}
 
 /* --- Кнопка «где я» на карте --- */
 .geo-cta{position:absolute;z-index:600;left:12px;right:12px;bottom:12px;
@@ -1061,7 +1053,24 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
   <script src="https://telegram.org/js/telegram-web-app.js" onerror="window.__tgSdkFailed=1"></script>
 </head>
 <body>
-<main class="app"><div class="map-host" id="map-host" hidden></div><div class="shell" id="app"><div class="splash"><img src="/static/bb-bike-logo.jpg" alt="Бибибайк"><span>Открываем квест…</span></div></div></main>
+<main class="app"><div class="map-host" id="map-host" hidden></div><div class="shell" id="app"></div></main>
+<div class="splash" id="app-splash" role="status" aria-live="polite" aria-label="Подготавливаем квест">
+  <div class="splash-inner" aria-hidden="true">
+    <div class="splash-stage">
+      <span class="splash-glow"></span>
+      <svg class="splash-ring" viewBox="0 0 100 100"><circle class="splash-ring-track" cx="50" cy="50" r="47"></circle><circle class="splash-ring-progress" cx="50" cy="50" r="47" pathLength="100"></circle></svg>
+      <span class="splash-speedline a"></span><span class="splash-speedline b"></span><span class="splash-speedline c"></span>
+      <span class="splash-beam"></span>
+      <span class="splash-bike-wrap"><img class="splash-bike" src="/static/bb-bike-scooter-cutout.png" alt="" fetchpriority="high" decoding="async" onerror="this.closest('.splash-bike-wrap')?.remove()"><i class="splash-headlight"></i></span>
+      <span class="splash-spark a"></span><span class="splash-spark b"></span><span class="splash-spark c"></span>
+      <span class="splash-road"><i></i></span>
+    </div>
+    <p class="splash-sub">Красная Поляна</p>
+    <h1 class="splash-title">Бибибайк Квест</h1>
+    <p class="splash-tip" id="splash-tip">Три партнёрские точки в долине. На каждой — свой подарок.</p>
+    <div class="splash-bar"><i></i></div>
+  </div>
+</div>
 <div id="modal"></div><div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 <script>
 const tg=window.Telegram?.WebApp,initData=tg?.initData||'',root=document.getElementById('app'),modal=document.getElementById('modal');
@@ -1102,7 +1111,7 @@ function cacheState(value){try{localStorage.setItem(CACHE_KEY,JSON.stringify({at
 function cachedState(){try{const raw=localStorage.getItem(CACHE_KEY);if(!raw)return null;const parsed=JSON.parse(raw);return parsed?.data||null}catch(_){return null}}
 function eventLog(event_type,point_id=null,navigator=''){api('/api/quest/event',{method:'POST',keepalive:true,body:JSON.stringify({event_type,point_id,navigator,request_id:requestId()})}).catch(()=>{})}
 function toast(text){const n=document.getElementById('toast');n.textContent=text;n.classList.remove('hidden');clearTimeout(n._t);n._t=setTimeout(()=>n.classList.add('hidden'),3200)}
-function destroyQuestMap(){routeRequestToken++;mapResizeObserver?.disconnect?.();mapResizeObserver=null;clearTimeout(mapReadyTimer);mapReadyTimer=null;mapContextCleanup?.();mapContextCleanup=null;if(glRoute){try{glRoute.destroy()}catch(_){}glRoute=null}routeSeq=null;if(glMap){try{glMap.destroy()}catch(_){}glMap=null;glStyleId='';glClear()}}
+function destroyQuestMap(){routeRequestToken++;mapAttemptId++;mapResizeObserver?.disconnect?.();mapResizeObserver=null;clearTimeout(mapReadyTimer);mapReadyTimer=null;mapContextCleanup?.();mapContextCleanup=null;if(glRoute){try{glRoute.destroy()}catch(_){}glRoute=null}routeSeq=null;if(glMap){try{glMap.destroy()}catch(_){}glMap=null;glStyleId='';glClear()}}
 function show(html,preserveMap=false){const host=document.getElementById('map-host');if(host&&!preserveMap)host.hidden=true;root.innerHTML=html;if(offlineMode)root.insertAdjacentHTML('afterbegin','<div class="offline-banner" role="status">Нет сети · показан сохранённый прогресс</div>');root.closest('.app')?.classList.toggle('with-tabbar',!!root.querySelector('.tabbar'));window.scrollTo({top:0,behavior:'auto'});requestAnimationFrame(()=>{const target=[...root.querySelectorAll('h1,h2')].find(node=>!node.closest('button'))||root.querySelector('section');if(target){target.setAttribute('tabindex','-1');target.focus({preventScroll:true})}});setTimeout(syncBackButton,0)}
 function completed(){return (state?.points||[]).filter(p=>p.completed_at).length}
 function pointBySeq(seq){return state?.points?.find(p=>p.seq===Number(seq))}
@@ -1142,7 +1151,7 @@ function routeStage(p){const d=localDistance(p),label=d!=null?fmt(d):'точка
    она включается сама, если ключ не задан или библиотека не загрузилась,
    поэтому неудачное подключение не оставит гостя без карты. */
 let glMap=null,glMarkers=[],glRoute=null,glUser=null,glStyleId='',mapEngine='none';
-let mapReadyTimer=null,mapContextCleanup=null;
+let mapReadyTimer=null,mapContextCleanup=null,mapAttemptId=0;
 
 /* ═══ ПРОГРЕВ ЭКРАНОВ ══════════════════════════════════════════════
    Пока идёт заставка, готовим всё, что позже вызывает рывки:
@@ -1189,10 +1198,10 @@ const requestIdleCallback=window.requestIdleCallback||(fn=>setTimeout(fn,120));
    ждём готовности карты, а не отсчитываем условные секунды. Снизу
    ограничение, чтобы она не мигала на быстрой сети, сверху — предел,
    после которого человек попадает в приложение в любом случае. */
-// Пять секунд — минимум показа: за это время успевают прогреться
-// карта и остальные экраны, а человек видит анимацию целиком.
-const SPLASH_MIN_MS=5000,SPLASH_MAX_MS=15000;
-let splashShown=false,splashNode=null,splashStart=0,splashDone=false,splashTimer=null;
+// Один полный цикл байка — минимальный показ: за это время карта и остальные
+// экраны прогреваются, но быстрый телефон не ждёт искусственные пять секунд.
+const SPLASH_MIN_MS=3200,SPLASH_PROGRESS_MS=5000,SPLASH_MAX_MS=26000;
+let splashShown=false,splashNode=null,splashStart=0,splashDone=false,splashTimer=null,splashGeneration=0;
 let splashAnimations=[];
 
 /* HyperFrames motion language, исполненная нативным WAAPI: отдельный
@@ -1205,7 +1214,7 @@ function startSplashMotion(node){
   if(typeof Element.prototype.animate!=='function'){
     node.classList.add('css-motion');
     const progress=node.querySelector('.splash-ring-progress');if(progress)progress.style.strokeDashoffset='0';
-    const bar=node.querySelector('.splash-bar i');if(bar){bar.style.transition=`transform ${SPLASH_MAX_MS}ms linear`;requestAnimationFrame(()=>{bar.style.transform='scaleX(1)'})}
+    const bar=node.querySelector('.splash-bar i');if(bar){bar.style.transition=`transform ${SPLASH_PROGRESS_MS}ms linear`;requestAnimationFrame(()=>{bar.style.transform='scaleX(1)'})}
     return}
   const reduced=window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
   const remember=animation=>{splashAnimations.push(animation);return animation};
@@ -1216,6 +1225,16 @@ function startSplashMotion(node){
   const ringProgress=node.querySelector('.splash-ring-progress');
   const road=node.querySelector('.splash-road i');
   const bar=node.querySelector('.splash-bar i');
+  if(reduced){
+    if(glow){glow.style.opacity='.28';glow.style.transform='scale(1)'}
+    if(ringProgress){ringProgress.style.strokeDashoffset='0';ringProgress.style.opacity='1'}
+    if(road)road.style.transform='translate3d(0,0,0)';
+    if(bar)bar.style.transform='scaleX(1)';
+    if(wrapper)remember(wrapper.animate([
+      {transform:'translate3d(0,8px,0) scale(.94)',opacity:0},
+      {transform:'translate3d(0,0,0) scale(1)',opacity:1}
+    ],{duration:320,easing:'ease-out',fill:'both'}));
+    return}
   if(glow)remember(glow.animate([
     {transform:'scale(.82)',opacity:0},
     {transform:'scale(1)',opacity:.3,offset:.22},
@@ -1229,7 +1248,7 @@ function startSplashMotion(node){
   if(ringProgress)remember(ringProgress.animate([
     {strokeDashoffset:100,opacity:.35},{strokeDashoffset:0,opacity:1}
   ],{duration:1450,easing:'cubic-bezier(.2,0,0,1)',fill:'both',iterations:11}));
-  const cycle=5000,loops=Math.ceil(SPLASH_MAX_MS/cycle);
+  const cycle=3200,loops=Math.ceil(SPLASH_MAX_MS/cycle);
   if(road)remember(road.animate([
     {transform:'translate3d(98px,0,0)'},
     {transform:'translate3d(-102px,0,0)',offset:.55},
@@ -1237,7 +1256,7 @@ function startSplashMotion(node){
   ],{duration:cycle,easing:'cubic-bezier(.2,.7,.25,1)',fill:'both',iterations:loops}));
   if(bar)remember(bar.animate([
     {transform:'scaleX(0)'},{transform:'scaleX(1)'}
-  ],{duration:SPLASH_MAX_MS,easing:'linear',fill:'both',iterations:1}));
+  ],{duration:SPLASH_PROGRESS_MS,easing:'linear',fill:'both',iterations:1}));
   const headlight=node.querySelector('.splash-headlight');
   const beam=node.querySelector('.splash-beam');
   const lines=[...node.querySelectorAll('.splash-speedline')];
@@ -1295,8 +1314,18 @@ function startSplashMotion(node){
 function markMapReady(){
   // Карта доложила о готовности (или сообщила, что не запустится) —
   // держать заставку дальше незачем.
-  const layer=document.getElementById('map-loading-layer');
-  if(layer){layer.classList.add('done');setTimeout(()=>layer.remove(),360)}
+  hideSplash()}
+
+function finishSplashWithoutMap(){hideSplash()}
+
+function finishSplashAfterMapTimeout(generation=splashGeneration){
+  if(generation!==splashGeneration)return;
+  const node=document.getElementById('quest-map');
+  if(node?.classList.contains('map-ready'))return hideSplash();
+  // MapGL получает собственные 12/18 секунд с момента фактического старта. Общий
+  // boot-таймер не имеет права убивать исправную карту после медленного state API.
+  if(node)return;
+  if(!root.children.length)emptyState('Не получилось открыть квест','Проверь интернет и попробуй ещё раз.');
   hideSplash()}
 
 function hideSplash(){
@@ -1306,9 +1335,12 @@ function hideSplash(){
   splashDone=true;clearTimeout(splashTimer);
   const node=splashNode;splashNode=null;
   node.classList.add('done');
-  setTimeout(()=>{stopSplashMotion();node.remove()},500);
-  onSplashDone.forEach(fn=>{try{fn()}catch(_){}});
-  onSplashDone.length=0}
+  setTimeout(()=>{
+    stopSplashMotion();node.remove();
+    root.inert=false;root.removeAttribute('aria-hidden');
+    const host=document.getElementById('map-host');if(host){host.inert=false;host.removeAttribute('aria-hidden')}
+    onSplashDone.splice(0).forEach(fn=>{try{fn()}catch(_){}})
+  },500)}
 
 const onSplashDone=[];
 function afterSplash(fn){splashDone?fn():onSplashDone.push(fn)}
@@ -1331,7 +1363,7 @@ function introOverlay(){
     <div class="intro-steps">
       <div class="intro-step"><b>1</b><span>Выбирай точку на карте — увидишь адрес, часы работы и подарок.</span></div>
       <div class="intro-step"><b>2</b><span>${geo?`Подъезжай ближе ${r} метров и сканируй зелёную табличку Бибибайк у стойки.`:'Заходи к партнёру и сканируй зелёную табличку Бибибайк у стойки.'}</span></div>
-      <div class="intro-step"><b>3</b><span>Промокод сохранится в паспорте — покажи его на кассе.</span></div>
+      <div class="intro-step"><b>3</b><span>Промокод сохранится в квесте — покажи его на кассе.</span></div>
     </div>
     <button class="btn primary" onclick="closeIntro()">Начать маршрут</button>
   </div>`;
@@ -1350,13 +1382,13 @@ function closeIntro(){
 function runSplash(force=false){
   if(splashShown&&!force)return;
   splashShown=true;
-  if(document.getElementById('app-splash'))return;
-  const node=document.createElement('div');
-  node.className='splash';node.id='app-splash';
-  node.setAttribute('role','status');
-  node.setAttribute('aria-live','polite');
-  node.style.setProperty('--splash-ms',SPLASH_MAX_MS+'ms');
-  node.innerHTML=`<div class="splash-inner">
+  let node=document.getElementById('app-splash');
+  if(!node){
+    node=document.createElement('div');
+    node.className='splash';node.id='app-splash';
+    node.setAttribute('role','status');node.setAttribute('aria-live','polite');
+    node.setAttribute('aria-label','Подготавливаем квест');
+    node.innerHTML=`<div class="splash-inner" aria-hidden="true">
     <div class="splash-stage" aria-hidden="true">
       <span class="splash-glow"></span>
       <svg class="splash-ring" viewBox="0 0 100 100"><circle class="splash-ring-track" cx="50" cy="50" r="47"></circle><circle class="splash-ring-progress" cx="50" cy="50" r="47" pathLength="100"></circle></svg>
@@ -1371,13 +1403,18 @@ function runSplash(force=false){
     <p class="splash-tip" id="splash-tip">${esc(SPLASH_TIPS[0])}</p>
     <div class="splash-bar"><i></i></div>
   </div>`;
-  document.body.appendChild(node);
+    document.body.appendChild(node)}
+  node.classList.remove('done');node.style.setProperty('--splash-ms',SPLASH_MAX_MS+'ms');
   splashNode=node;splashStart=Date.now();splashDone=false;
+  const generation=++splashGeneration;
+  root.inert=true;root.setAttribute('aria-hidden','true');
+  const host=document.getElementById('map-host');if(host){host.inert=true;host.setAttribute('aria-hidden','true')}
   startSplashMotion(node);
   // Прогрев идёт параллельно анимации, а не после неё.
   requestAnimationFrame(()=>{try{warmupScreens()}catch(_){}});
-  // Предел ожидания: если карта молчит, человек всё равно войдёт.
-  splashTimer=setTimeout(hideSplash,SPLASH_MAX_MS);
+  // Заставка — единственный экран ожидания. Она закрывается по готовому кадру карты;
+  // большой таймаут оставлен только для контролируемой ошибки вместо вечной загрузки.
+  splashTimer=setTimeout(()=>finishSplashAfterMapTimeout(generation),SPLASH_MAX_MS);
   // Подсказки сменяются, чтобы ожидание было полезным, а не пустым.
   let index=0;
   const tip=node.querySelector('#splash-tip');
@@ -1477,7 +1514,15 @@ function glClear(){
   glMarkers.forEach(m=>{try{m.destroy()}catch(_){}});glMarkers=[];
   if(glUser){try{glUser.destroy()}catch(_){}glUser=null}}
 
-function initGlMap(node,p,compatAttempt=0){
+function mapNotice(node,text){
+  if(!node||splashNode)return;
+  let notice=node.querySelector('.map-notice');
+  if(!notice){notice=document.createElement('div');notice.className='map-notice';node.appendChild(notice)}
+  notice.textContent=text}
+
+function initGlMap(node,p,compatAttempt=0,attemptId=++mapAttemptId){
+  if(compatAttempt===0&&node.__mapglState==='loading'&&glMap)return;
+  node.__mapglState='loading';
   mapEngine='mapgl';
   const themeButton=document.getElementById('map-theme-toggle');if(themeButton)themeButton.hidden=false;
   try{
@@ -1502,17 +1547,18 @@ function initGlMap(node,p,compatAttempt=0){
     glStyleId=initialStyle;
     applyMapTheme(false);
     let styleReady=false,renderReady=false,finished=false,preRenderErrors=0;
-    const alive=()=>instance===glMap&&document.body.contains(node)&&mapEngine==='mapgl';
+    const alive=()=>attemptId===mapAttemptId&&instance===glMap&&document.body.contains(node)&&mapEngine==='mapgl';
     const record=(type,value='')=>{diag.events.push({type,value:String(value||'').slice(0,180),at:Date.now()});if(diag.events.length>20)diag.events.shift()};
     const fallback=(reason='render_timeout')=>{
       if(finished||renderReady||!alive())return;finished=true;record('retry',reason);
       clearTimeout(mapReadyTimer);mapReadyTimer=null;mapContextCleanup?.();mapContextCleanup=null;
       try{instance.destroy()}catch(_){}if(glMap===instance)glMap=null;glClear();
       node.classList.remove('map-ready');node.innerHTML='<div class="map-skeleton"><span></span><span></span><span></span></div>';
-      if(!isIOSDevice()&&compatAttempt===0){mapNotice(node,'Настраиваем 2ГИС для этого устройства…');setTimeout(()=>{if(document.body.contains(node))initGlMap(node,p,1)},80);return}
-      window.__mapglFailed=true;mapEngine='none';diag.reason=reason;node.innerHTML='';mapErrorScreen(node,'2ГИС не смог запустить карту на этом устройстве. Попробуй ещё раз.')};
+      const retryable=!/invalidtilekey|unauthorized|forbidden|styleloaderror/i.test(String(reason));
+      if(retryable&&!isIOSDevice()&&compatAttempt===0){setTimeout(()=>{if(attemptId===mapAttemptId&&document.body.contains(node))initGlMap(node,p,1,attemptId)},80);return}
+      node.__mapglState='failed';window.__mapglFailed=true;mapEngine='none';diag.reason=reason;node.innerHTML='';mapErrorScreen(node,'2ГИС не смог запустить карту на этом устройстве. Попробуй ещё раз.')};
     instance.on?.('styleload',()=>{if(!alive())return;styleReady=true;record('styleload');clearTimeout(mapReadyTimer);mapReadyTimer=setTimeout(()=>fallback('tiles_not_rendered'),18000)});
-    instance.on?.('idle',()=>{if(!alive())return;renderReady=true;finished=true;clearTimeout(mapReadyTimer);mapReadyTimer=null;node.classList.add('map-ready');node.querySelector('.map-notice')?.remove();markMapReady();record('idle')});
+    instance.on?.('idle',()=>{if(!alive())return;renderReady=true;finished=true;node.__mapglState='ready';clearTimeout(mapReadyTimer);mapReadyTimer=null;node.classList.add('map-ready');node.querySelector('.map-notice')?.remove();markMapReady();record('idle')});
     instance.on?.('styleloaderror',event=>fallback(event?.error?.message||'styleloaderror'));
     instance.on?.('error',event=>{
       const kind=event?.error?.type||event?.type||'',message=event?.error?.message||event?.message||kind||'map_error';
@@ -1547,7 +1593,7 @@ function initGlMap(node,p,compatAttempt=0){
     diag.events=(diag.events||[]).concat({type:'constructor_error',value:String(err?.message||err).slice(0,180),at:Date.now()});
     clearTimeout(mapReadyTimer);mapReadyTimer=null;mapContextCleanup?.();mapContextCleanup=null;
     try{glMap?.destroy()}catch(_){}glMap=null;glClear();
-    if(!isIOSDevice()&&compatAttempt===0){node.innerHTML='<div class="map-skeleton"><span></span><span></span><span></span></div>';setTimeout(()=>initGlMap(node,p,1),80);return}
+    if(!isIOSDevice()&&compatAttempt===0){node.innerHTML='<div class="map-skeleton"><span></span><span></span><span></span></div>';setTimeout(()=>{if(attemptId===mapAttemptId&&document.body.contains(node))initGlMap(node,p,1,attemptId)},80);return}
     window.__mapglFailed=true;mapEngine='none';diag.reason=String(err?.message||err);
     mapErrorScreen(node,'2ГИС не смог запустить карту на этом устройстве. Попробуй ещё раз.')}}
 
@@ -1571,12 +1617,13 @@ function glFitAll(p){
    маршрут открывается во внешнем навигаторе. */
 function mapErrorScreen(node,reason){
   mapEngine='none';
-  markMapReady();
+  node.__mapglState='failed';
   node.innerHTML=`<div class="user-map-fallback">
     <b>Карта временно недоступна</b>
     <span>${esc(reason||'Не удалось загрузить карту 2ГИС. Проверь интернет.')}</span>
     <button class="btn secondary" onclick="retryMap()">Повторить</button>
-  </div>`}
+  </div>`;
+  requestAnimationFrame(markMapReady)}
 
 function retryMap(){
   window.__mapglFailed=false;
@@ -1587,12 +1634,13 @@ function initUserMap(p){
   const node=document.getElementById('quest-map');
   if(!node)return;
   if(!mapglKey())return mapErrorScreen(node,'Карта не настроена на сервере. Напиши в поддержку.');
+  if(window.__mapglFailed)return mapErrorScreen(node,'Не удалось загрузить карту 2ГИС. Проверь интернет и попробуй снова.');
   if(!window.mapgl&&!window.__mapglFailed){
     // Библиотека подгружается один раз, дальше карта строится сразу.
     loadMapgl(()=>initUserMap(p));
     return}
   if(!window.mapgl)return mapErrorScreen(node,'Не удалось загрузить карту 2ГИС. Проверь интернет и попробуй снова.');
-  return initGlMap(node,p)}
+  return initGlMap(node,p,0,++mapAttemptId)}
 
 function stickyActions(p){if(p.completed_at)return `<div class="sticky-actions"><button class="btn primary" onclick="showReward(${p.seq})">Открыть подарок</button><button class="btn secondary" onclick="passportScreen()">Мой квест</button></div>`;return `<div class="sticky-actions"><button class="btn primary" onclick="chooseNavigator(${p.seq})">${icon('route')}<span>Построить маршрут${localDistance(p)!=null?' · '+fmt(localDistance(p)):''}</span></button><button class="btn secondary" onclick="scanPoint(${p.seq})">${icon('scan')}<span>Поставить штамп · QR</span></button></div>`}
 /* Адрес поддержки приходит из настроек сервера (SUPPORT_URL), а не зашит в вёрстку. */
@@ -1809,6 +1857,7 @@ let pendingScan=startParam();
 
 async function applyPendingScan(){
   if(!pendingScan)return false;
+  if(!root.children.length)show(`${header()}<section class="empty"><div class="empty-stamp">БИБИБАЙК</div><h1>Проверяем штамп</h1><p>Подтверждаем точку и готовим подарок.</p></section>`);
   const code=pendingScan;
   try{
     if(state?.scan_requires_geo&&!localPosition){toast('Для этого штампа нужна разовая геопозиция');const pos=await oneLocation();if(!pos){routeScreen(selectedSeq,false);toast('Разреши геопозицию и нажми «Где я» — QR сохранён');return false}localPosition=pos}
@@ -1823,9 +1872,10 @@ async function applyPendingScan(){
       tg?.HapticFeedback?.notificationOccurred?.('success');
       // Сначала печать штампа, дальше человек попадает к партнёру.
       stampSuccess(ev.point_completed);
+      finishSplashWithoutMap();
       setTimeout(()=>partnerScreen(ev.point_completed,true),1600);
       return true}
-    if(ev.already_completed){toast('Эта точка уже отмечена');partnerScreen(ev.already_completed);return true}
+    if(ev.already_completed){toast('Эта точка уже отмечена');partnerScreen(ev.already_completed);finishSplashWithoutMap();return true}
   }catch(x){if(!offlineMode&&!['geo_required','too_far'].includes(x.code))pendingScan='';toast(x.message)}
   return false}
 
@@ -1841,10 +1891,9 @@ function cover(){const pts=(state?.points||[]).slice(0,3);show(`<section class="
   <label class="consent"><input id="rules-ok" type="checkbox"><span>Принимаю <a href="/privacy.html" target="_blank">правила квеста</a>. Разовая геопозиция не сохраняется ботом.</span></label>
   <button class="btn primary cover-button" onclick="startQuest(event)"><span>Начать квест</span></button>
   <button class="text-button" onclick="rules()">Как всё работает</button></section>`)}
-async function startQuest(e){if(!document.getElementById('rules-ok')?.checked)return toast('Сначала прими правила квеста');const sawRules=rulesShown;e.currentTarget.disabled=true;try{state=(await api('/api/quest/start',{method:'POST',body:JSON.stringify({privacy_accepted:true,request_id:requestId()})})).data;cacheState(state);selectedSeq=openPoints()[0]?.seq||state.points[0]?.seq;
+async function startQuest(e){if(!document.getElementById('rules-ok')?.checked)return toast('Сначала прими правила квеста');e.currentTarget.disabled=true;runSplash(true);try{state=(await api('/api/quest/start',{method:'POST',body:JSON.stringify({privacy_accepted:true,request_id:requestId()})})).data;cacheState(state);selectedSeq=openPoints()[0]?.seq||state.points[0]?.seq;
     // Человек подтвердил правила — показываем заставку, а карта и точки
     // готовятся за ней, пока он читает подсказки.
-    runSplash();
     // Карта поднимается прямо сейчас, под заставкой: к моменту, когда
     // она уйдёт, точки и 2ГИС уже готовы. Правила показываем поверх
     // готовой карты, чтобы не поднимать её заново.
@@ -1852,8 +1901,7 @@ async function startQuest(e){if(!document.getElementById('rules-ok')?.checked)re
     // Пришёл по QR — сразу засчитываем точку, правила покажем в профиле.
     if(await applyPendingScan())return;
     routeScreen();
-    if(!sawRules)afterSplash(()=>setTimeout(introOverlay,140));
-  }catch(x){toast(x.message);e.currentTarget.disabled=false}}
+  }catch(x){toast(x.message);e.currentTarget.disabled=false;finishSplashWithoutMap()}}
 /* Маршрут рисуется прямо в приложении: линия по дорогам, длина и время.
    Кнопки внешних навигаторов остаются — они нужны для голосовой навигации
    в пути, а здесь человек просто прикидывает, далеко ли ехать. */
@@ -2024,7 +2072,6 @@ function sheetDragEnd(){
 
 function routeMapMarkup(p,chips){return `<section class="map-screen" aria-label="Маршрут к точке ${esc(p.point_name)}">
     <div id="quest-map" class="quest-map" aria-label="Карта партнёрских точек"></div>
-    <div class="map-loading-layer" id="map-loading-layer" role="status"><i class="map-loading-spinner"></i><b>Загружаем карту 2ГИС</b><span>Точки появятся сразу после подготовки карты</span></div>
     <div class="map-top">
       <div class="map-progress-pill"><b>${completed()}/3</b><span>${3-completed()===0?'всё собрано':'штампов собрано'}</span></div>
       ${themeToggleMarkup()}
@@ -2316,19 +2363,36 @@ function render(track=true){
   // Пока человек читает инструкцию, фоновое обновление данных
   // не должно подменять экран картой.
   if(root.querySelector('.rules-screen'))return;
-  if(!state?.campaign)return emptyState('Маршрут ещё готовят','Скоро здесь появятся точки Красной Поляны.');
+  if(!state?.campaign){emptyState('Маршрут ещё готовят','Скоро здесь появятся точки Красной Поляны.');return finishSplashWithoutMap()}
   /* Код с таблички обрабатывается раньше обычных экранов: человек стоит
      у стойки партнёра и ждёт штамп, а не карту. */
-  if(pendingScan&&state.campaign.status==='active'&&state.session?.status==='active'){applyPendingScan();return}if(state.campaign.status!=='active')return state.session&&completed()?passportScreen('Квест сейчас на паузе. Полученные штампы и подарки сохранены.'):emptyState('Квест сейчас на паузе','Прогресс и уже полученные подарки останутся на месте.');if(!state.session)return cover();if(state.session.status==='expired')return completed()?passportScreen('Маршрут приостановлен. Нажми «Проверить снова», чтобы продолжить.'):emptyState('Маршрут приостановлен','Прогресс сохранён. Открой квест снова, чтобы продолжить.');selectedSeq=selectedSeq||openPoints()[0]?.seq||state.points[0]?.seq;
-  completed()===3?passportScreen():routeScreen(selectedSeq,track)}
+  if(pendingScan&&state.campaign.status==='active'&&state.session?.status==='active'){
+    applyPendingScan().then(handled=>{if(!handled)routeScreen(selectedSeq,false)});return}
+  if(state.campaign.status!=='active'){
+    state.session&&completed()
+      ?passportScreen('Квест сейчас на паузе. Полученные штампы и подарки сохранены.')
+      :emptyState('Квест сейчас на паузе','Прогресс и уже полученные подарки останутся на месте.');
+    return finishSplashWithoutMap()}
+  if(!state.session){cover();return finishSplashWithoutMap()}
+  if(state.session.status==='expired'){
+    completed()
+      ?passportScreen('Маршрут приостановлен. Нажми «Проверить снова», чтобы продолжить.')
+      :emptyState('Маршрут приостановлен','Прогресс сохранён. Открой квест снова, чтобы продолжить.');
+    return finishSplashWithoutMap()}
+  selectedSeq=selectedSeq||openPoints()[0]?.seq||state.points[0]?.seq;
+  if(completed()===3){passportScreen();return finishSplashWithoutMap()}
+  // Наличие активной сессии означает, что правила уже были приняты на обложке.
+  // Повторный запуск сразу открывает готовую карту, без второго экрана инструкции.
+  rulesShown=true;
+  routeScreen(selectedSeq,track)}
 function stateFingerprint(value){return JSON.stringify({campaign:value?.campaign,session:value?.session,points:value?.points,premium:value?.premium})}
 function canAutoRender(){const tag=document.activeElement?.tagName;return !document.hidden&&!modal.innerHTML&&!qrPopupOpen&&!['INPUT','TEXTAREA','SELECT'].includes(tag)&&!root.querySelector('.rules,.rules-screen,.stamp-success,.stamp-screen,.saved-reward,.scanner-screen')}
-async function refresh(options={}){const silent=!!options.silent;if(syncInFlight)return;syncInFlight=true;try{const payload=await api('/api/quest/state');if(lastBuildVersion&&payload.build_version&&payload.build_version!==lastBuildVersion){if(canAutoRender())location.reload();return}if(payload.build_version)lastBuildVersion=payload.build_version;const before=stateFingerprint(state),after=stateFingerprint(payload.data),changed=before!==after;state=payload.data;botUsername=payload.bot_username||'';cacheState(state);if(!silent){pendingAutoRender=false;render(true)}else if(changed||pendingAutoRender){if(canAutoRender()){pendingAutoRender=false;render(false)}else pendingAutoRender=true}}catch(e){if(silent)return;const saved=cachedState();if(saved){state=saved;setOffline(true);toast('Нет связи — открыт сохранённый квест');return render(false)}emptyState('Не получилось открыть квест',e.message||'Проверь интернет и попробуй ещё раз.')}finally{syncInFlight=false}}
-async function publicLanding(){try{const payload=await fetch('/api/public/info',{cache:'no-store'}).then(r=>r.json());const app=payload.app_url||payload.chat_url,chat=payload.chat_url||app;show(`<section class="passport-cover public-cover"><div class="cover-grain"></div><div class="cover-brand"><img src="/static/bb-bike-logo.jpg" alt="Бибибайк"><span>КВЕСТ · КРАСНАЯ ПОЛЯНА</span></div><div class="cover-copy"><p class="micro">КВЕСТ КРАСНОЙ ПОЛЯНЫ</p><h1>Пройди городской квест</h1><p>Три места, три подарка и Подписка 30 дней. Прогресс хранится внутри Telegram.</p></div><a class="btn cover-button public-link" href="${esc(app)}">Открыть приложение</a><a class="btn quiet public-link" href="${esc(chat)}">Перейти в чат с ботом</a></section>`)}catch(_){emptyState('Открой квест в Telegram','Эта страница работает внутри личного чата с ботом.')}}
+async function refresh(options={}){const silent=!!options.silent;if(syncInFlight)return;syncInFlight=true;try{const payload=await api('/api/quest/state');if(lastBuildVersion&&payload.build_version&&payload.build_version!==lastBuildVersion){if(canAutoRender())location.reload();return}if(payload.build_version)lastBuildVersion=payload.build_version;const before=stateFingerprint(state),after=stateFingerprint(payload.data),changed=before!==after;state=payload.data;botUsername=payload.bot_username||'';cacheState(state);if(!silent){pendingAutoRender=false;render(true)}else if(changed||pendingAutoRender){if(canAutoRender()){pendingAutoRender=false;render(false)}else pendingAutoRender=true}}catch(e){if(silent)return;const saved=cachedState();if(saved){state=saved;setOffline(true);toast('Нет связи — открыт сохранённый квест');return render(false)}emptyState('Не получилось открыть квест',e.message||'Проверь интернет и попробуй ещё раз.');finishSplashWithoutMap()}finally{syncInFlight=false}}
+async function publicLanding(){try{const payload=await fetch('/api/public/info',{cache:'no-store'}).then(r=>r.json());const app=payload.app_url||payload.chat_url,chat=payload.chat_url||app;show(`<section class="passport-cover public-cover"><div class="cover-grain"></div><div class="cover-brand"><img src="/static/bb-bike-logo.jpg" alt="Бибибайк"><span>КВЕСТ · КРАСНАЯ ПОЛЯНА</span></div><div class="cover-copy"><p class="micro">КВЕСТ КРАСНОЙ ПОЛЯНЫ</p><h1>Пройди городской квест</h1><p>Три места, три подарка и Подписка 30 дней. Прогресс хранится внутри Telegram.</p></div><a class="btn cover-button public-link" href="${esc(app)}">Открыть приложение</a><a class="btn quiet public-link" href="${esc(chat)}">Перейти в чат с ботом</a></section>`)}catch(_){emptyState('Открой квест в Telegram','Эта страница работает внутри личного чата с ботом.')}finally{finishSplashWithoutMap()}}
 window.addEventListener('offline',()=>{setOffline(true);toast('Нет сети. Прогресс квеста сохранён.')});
 window.addEventListener('online',()=>refresh({silent:true}));
-window.addEventListener('pageshow',()=>initData&&refresh({silent:true}));
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&initData)refresh({silent:true})});
+window.addEventListener('pageshow',()=>initData&&state&&refresh({silent:true}));
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&initData&&state)refresh({silent:true})});
 window.addEventListener('keydown',event=>{if(event.key==='Escape'&&modal.innerHTML)return closeModal();if(event.key==='Tab'&&modal.innerHTML){const items=[...modal.querySelectorAll('button,input,a[href]')].filter(x=>!x.disabled);if(!items.length)return;const first=items[0],last=items.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}}});
 tg?.BackButton?.onClick(handleBack);
 tg?.onEvent?.('scanQrPopupClosed',()=>{qrPopupOpen=false});
@@ -2347,16 +2411,21 @@ function registerOfflineShell(){
 registerOfflineShell();
 
 function boot(){
-  if(initData||dev)return refresh();
+  if(initData||dev){
+    // Сеть, состояние квеста и библиотека 2ГИС стартуют одновременно. Как только API
+    // вернёт точки, routeScreen создаст полноразмерный canvas под этой же заставкой.
+    runSplash();loadMapgl(()=>{});return refresh()}
   const insideTelegram=/tgWebApp/i.test(location.hash+location.search)||!!window.TelegramWebviewProxy;
   if(insideTelegram||window.__tgSdkFailed){
+    runSplash();loadMapgl(()=>{});
     const saved=cachedState();
     if(saved){state=saved;setOffline(true);render(false);return toast('Telegram не отвечает — открыт сохранённый квест')}
-    return emptyState('Telegram не отвечает','Не удалось загрузить связь с Telegram. Проверь интернет и открой квест заново.','location.reload()');
+    emptyState('Telegram не отвечает','Не удалось загрузить связь с Telegram. Проверь интернет и открой квест заново.','location.reload()');
+    return finishSplashWithoutMap();
   }
-  publicLanding();
+  runSplash();publicLanding();
 }
-setTimeout(boot,80);
+boot();
 </script>
 </body>
 </html>

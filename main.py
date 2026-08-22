@@ -35,6 +35,11 @@ from aiogram import Bot, Dispatcher
 from aiogram import Bot, Router, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.exceptions import (
+    TelegramAPIError, TelegramBadRequest, TelegramForbiddenError,
+    TelegramNetworkError, TelegramRetryAfter, TelegramServerError,
+    TelegramUnauthorizedError,
+)
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import (
     BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup,
@@ -2327,8 +2332,15 @@ def admin_keyboard(settings: Settings, user_id: int = 0) -> InlineKeyboardMarkup
 
 
 async def setup_bot_commands(bot: Bot, settings: Settings) -> None:
-    await bot.set_my_name("Бибибайк КВЕСТ")
-    await bot.set_my_commands([
+    """Best-effort синхронизация оформления, не блокирующая запуск приложения.
+
+    Telegram учитывает даже повторную запись того же имени в flood control. Поэтому
+    сначала читаем текущее значение и вызываем setter только при реальном изменении.
+    Каждое поле независимо: лимит имени не мешает обновить меню или команды.
+    """
+    logger = logging.getLogger("bibibike.quest.bot-profile")
+    desired_name = "Бибибайк КВЕСТ"
+    desired_commands = [
         BotCommand(command="start", description="Открыть квест"),
         BotCommand(command="progress", description="Мой прогресс"),
         BotCommand(command="support", description="Написать в поддержку"),
@@ -2336,14 +2348,64 @@ async def setup_bot_commands(bot: Bot, settings: Settings) -> None:
         BotCommand(command="admin", description="Панель управления"),
         BotCommand(command="participant", description="Статус участника (админ)"),
         BotCommand(command="admins", description="Кто имеет доступ к CRM (админ)"),
-    ])
-    await bot.set_my_short_description("Квест Бибибайк по трём точкам Красной Поляны")
-    await bot.set_my_description(
+    ]
+    desired_short = "Квест Бибибайк по трём точкам Красной Поляны"
+    desired_description = (
         "Выбирай партнёрские точки в любом порядке, строй маршрут, ставь QR-штампы "
         "и забирай подарки. После трёх точек — Подписка 30 дней."
     )
-    await bot.set_chat_menu_button(
-        menu_button=MenuButtonWebApp(text="Открыть квест", web_app=WebAppInfo(url=settings.webapp_url))
+    desired_menu = MenuButtonWebApp(
+        text="Открыть квест", web_app=WebAppInfo(url=settings.webapp_url)
+    )
+
+    async def reconcile(label: str, getter, matches, setter) -> None:
+        try:
+            current = await getter()
+            if matches(current):
+                logger.debug("Поле %s уже актуально", label)
+                return
+            await setter()
+            logger.info("Обновлено поле Telegram: %s", label)
+        except TelegramRetryAfter as exc:
+            logger.warning(
+                "Telegram ограничил обновление %s; повтор возможен через %s с. "
+                "Запуск бота продолжается.", label, exc.retry_after,
+            )
+        except TelegramUnauthorizedError:
+            logger.exception("Telegram отклонил BOT_TOKEN при обновлении %s", label)
+            raise
+        except (TelegramBadRequest, TelegramForbiddenError) as exc:
+            logger.error("Telegram не принял поле %s: %s", label, exc)
+        except (TelegramNetworkError, TelegramServerError) as exc:
+            logger.warning("Временно не удалось синхронизировать %s: %s", label, exc)
+        except TelegramAPIError as exc:
+            logger.warning("Telegram API не обновил %s: %s", label, exc)
+
+    await reconcile(
+        "name", bot.get_my_name, lambda value: value.name == desired_name,
+        lambda: bot.set_my_name(desired_name),
+    )
+    await reconcile(
+        "commands", bot.get_my_commands,
+        lambda value: [(item.command, item.description) for item in value]
+        == [(item.command, item.description) for item in desired_commands],
+        lambda: bot.set_my_commands(desired_commands),
+    )
+    await reconcile(
+        "short_description", bot.get_my_short_description,
+        lambda value: value.short_description == desired_short,
+        lambda: bot.set_my_short_description(desired_short),
+    )
+    await reconcile(
+        "description", bot.get_my_description,
+        lambda value: value.description == desired_description,
+        lambda: bot.set_my_description(desired_description),
+    )
+    await reconcile(
+        "menu_button", bot.get_chat_menu_button,
+        lambda value: getattr(value, "text", None) == desired_menu.text
+        and getattr(getattr(value, "web_app", None), "url", None) == settings.webapp_url,
+        lambda: bot.set_chat_menu_button(menu_button=desired_menu),
     )
 
 
@@ -3425,7 +3487,6 @@ async def run() -> None:
     bot = Bot(settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
     dp.include_router(build_router(service, settings))
-    await setup_bot_commands(bot, settings)
 
     app = create_web_app(service, settings, bot, BUILD_VERSION)
     runner = web.AppRunner(app, access_log=logging.getLogger("aiohttp.access"))
@@ -3434,6 +3495,21 @@ async def run() -> None:
     await site.start()
     log.info("Mini App и API слушают 0.0.0.0:%s", settings.web_port)
     log.info("Версия: %s", BUILD_VERSION)
+    # Оформление Telegram не является зависимостью HTTP/API. Даже многочасовой
+    # RetryAfter на SetMyName больше не может остановить деплой и карту.
+    profile_sync = asyncio.create_task(
+        setup_bot_commands(bot, settings), name="telegram-profile-sync"
+    )
+    def report_profile_sync(task: asyncio.Task) -> None:
+        if task.cancelled():
+            return
+        try:
+            task.result()
+        except Exception:
+            # Ошибка оформления не должна останавливать HTTP/API, но и теряться
+            # как "Task exception was never retrieved" тоже не должна.
+            log.exception("Фоновая синхронизация профиля Telegram завершилась с ошибкой")
+    profile_sync.add_done_callback(report_profile_sync)
     counts = {
         "campaigns": (await db.fetchone("SELECT COUNT(*) count FROM campaigns"))["count"],
         "points": (await db.fetchone("SELECT COUNT(*) count FROM points"))["count"],
@@ -3461,19 +3537,28 @@ async def run() -> None:
     )
     janitor = asyncio.create_task(service.janitor(stop), name="privacy-janitor")
     waiter = asyncio.create_task(stop.wait(), name="shutdown-waiter")
-    done, _ = await asyncio.wait({polling, waiter}, return_when=asyncio.FIRST_COMPLETED)
-    if polling in done and polling.exception():
-        raise polling.exception()
-    stop.set()
-    await dp.stop_polling()
-    for task in (polling, janitor, waiter):
-        if not task.done():
-            task.cancel()
-    await asyncio.gather(polling, janitor, waiter, return_exceptions=True)
-    await runner.cleanup()
-    await bot.session.close()
-    await db.close()
-    log.info("Квест Бибибайк остановлен штатно")
+    polling_error: BaseException | None = None
+    try:
+        done, _ = await asyncio.wait({polling, waiter}, return_when=asyncio.FIRST_COMPLETED)
+        if polling in done and not polling.cancelled():
+            polling_error = polling.exception()
+    finally:
+        stop.set()
+        if not polling.done():
+            try:
+                await dp.stop_polling()
+            except RuntimeError:
+                pass
+        for task in (polling, janitor, waiter, profile_sync):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(polling, janitor, waiter, profile_sync, return_exceptions=True)
+        await runner.cleanup()
+        await bot.session.close()
+        await db.close()
+        log.info("Квест Бибибайк остановлен штатно")
+    if polling_error is not None:
+        raise polling_error
 
 
 if __name__ == "__main__":

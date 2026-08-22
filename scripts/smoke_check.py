@@ -14,6 +14,7 @@ from quest.db import Database
 from quest.security import TelegramIdentity, create_admin_ticket, validate_admin_ticket
 from quest.service import QuestError, QuestService
 import main as production
+from aiogram.methods import SetMyName
 
 
 async def production_reward_scenario() -> None:
@@ -199,14 +200,41 @@ async def main() -> None:
     assert share_result.reply_markup.inline_keyboard[0][0].url == "https://t.me/quest_bot?startapp=quest"
     class SetupBot:
         name = ""
-        async def set_my_name(self, name): self.name = name
-        async def set_my_commands(self, *_args, **_kwargs): pass
-        async def set_my_short_description(self, *_args, **_kwargs): pass
-        async def set_my_description(self, *_args, **_kwargs): pass
-        async def set_chat_menu_button(self, *_args, **_kwargs): pass
+        commands = []
+        short_description = ""
+        description = ""
+        menu_button = None
+        writes = 0
+        async def get_my_name(self): return type("Name", (), {"name": self.name})()
+        async def set_my_name(self, name): self.name = name; self.writes += 1
+        async def get_my_commands(self): return self.commands
+        async def set_my_commands(self, commands): self.commands = commands; self.writes += 1
+        async def get_my_short_description(self):
+            return type("Short", (), {"short_description": self.short_description})()
+        async def set_my_short_description(self, value): self.short_description = value; self.writes += 1
+        async def get_my_description(self):
+            return type("Description", (), {"description": self.description})()
+        async def set_my_description(self, value): self.description = value; self.writes += 1
+        async def get_chat_menu_button(self):
+            return self.menu_button or type("Menu", (), {"text": None, "web_app": None})()
+        async def set_chat_menu_button(self, menu_button): self.menu_button = menu_button; self.writes += 1
     setup_bot = SetupBot()
     await production.setup_bot_commands(setup_bot, share_settings)
     assert setup_bot.name == "Бибибайк КВЕСТ"
+    # Повторная синхронизация читает значения, но не делает лишних Telegram writes.
+    writes = setup_bot.writes
+    await production.setup_bot_commands(setup_bot, share_settings)
+    assert setup_bot.writes == writes
+    assert setup_bot.menu_button.web_app.url == share_settings.webapp_url
+    class FloodedNameBot(SetupBot):
+        async def set_my_name(self, name):
+            raise production.TelegramRetryAfter(
+                method=SetMyName(name=name), message="Too Many Requests", retry_after=67611,
+            )
+    flooded_bot = FloodedNameBot()
+    await production.setup_bot_commands(flooded_bot, share_settings)
+    # Flood control одного поля не мешает синхронизировать остальные и не выходит наружу.
+    assert flooded_bot.name == "" and flooded_bot.menu_button.web_app.url == share_settings.webapp_url
     webapp = (root / "index.html").read_text(encoding="utf-8")
     assert "/api/quest/share/invite" in webapp and "tg.shareMessage" in webapp
     assert "Поделиться квестом" in webapp and "Отправить приглашение с видео" in webapp
@@ -220,7 +248,11 @@ async def main() -> None:
     assert "function primeRouteMap(" in webapp and "return rules('',true)" in webapp
     assert 'rel="preload" href="/static/bb-bike-scooter-cutout.png"' in webapp
     assert 'class="splash-headlight"' in webapp
-    assert 'id="map-loading-layer"' in webapp
+    assert 'id="map-loading-layer"' not in webapp and 'Загружаем карту 2ГИС' not in webapp
+    assert 'runSplash();loadMapgl(()=>{});return refresh()' in webapp
+    assert 'splashTimer=setTimeout(()=>finishSplashAfterMapTimeout(generation),SPLASH_MAX_MS)' in webapp
+    assert "if(node)return;" in webapp and "mapAttemptId" in webapp
+    assert "attemptId===mapAttemptId" in webapp
     assert "2gis.ru/directions/tab/" in webapp and "2gis.ru/routeSearch/rsType" not in webapp
     assert "reward_redeem_request_id" in production.SCHEMA
     assert all(name in production.SCHEMA for name in ("requested_at", "support_notified_at", "support_notification_claim"))
