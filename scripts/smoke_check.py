@@ -216,6 +216,9 @@ async def main() -> None:
     assert "Telegram ID:" in admin_app and "ID участника:" in admin_app
     assert "function useMapgl(){return !!mapglKey()&&!!window.mapgl&&!window.__mapglFailed}" in webapp
     assert "function initGlMap(" in webapp and "new mapgl.Map(node,opts)" in webapp
+    assert "function startSplashMotion(" in webapp and "Element.prototype.animate" in webapp
+    assert "function primeRouteMap(" in webapp and "return rules('',true)" in webapp
+    assert 'rel="preload" href="/static/bb-bike-scooter.jpg"' in webapp
     assert "2gis.ru/directions/tab/" in webapp and "2gis.ru/routeSearch/rsType" not in webapp
     assert "reward_redeem_request_id" in production.SCHEMA
     assert all(name in production.SCHEMA for name in ("requested_at", "support_notified_at", "support_notification_claim"))
