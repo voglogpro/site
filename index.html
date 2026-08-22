@@ -735,60 +735,14 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .map-host.warming{opacity:0;pointer-events:none}
 .app:has(.map-host:not([hidden]):not(.warming)) .shell{background:transparent}
 
-/* Анимация загрузки с байком. Всё движение — только transform и opacity:
-   их считает видеочип, поэтому кадры не проседают даже на слабых
-   телефонах. Ни одно свойство здесь не вызывает пересчёт разметки. */
-.splash-stage{position:relative;width:min(330px,88vw);height:272px;display:grid;place-items:center;
-  isolation:isolate;perspective:700px;overflow:visible}
-.splash-glow{position:absolute;inset:-8% -2% -15%;border-radius:50%;
-  background:radial-gradient(ellipse,rgba(143,227,0,.34) 0%,rgba(65,190,33,.12) 42%,transparent 70%);
-  transform:scale(.84);opacity:0;will-change:transform,opacity}
-@keyframes glow-pulse{0%,100%{transform:scale(.9);opacity:.55}50%{transform:scale(1.08);opacity:1}}
-.splash-ring{position:absolute;left:9%;top:0;width:82%;height:96%;overflow:visible;
-  transform:rotate(-90deg);will-change:transform;filter:drop-shadow(0 0 12px rgba(143,227,0,.18))}
-.splash-ring-track,.splash-ring-progress{fill:none;stroke-width:1.7}
-.splash-ring-track{stroke:rgba(143,227,0,.16)}
-.splash-ring-progress{stroke:var(--green);stroke-linecap:round;stroke-dasharray:68 32;stroke-dashoffset:100}
-@keyframes ring-spin{to{transform:rotate(360deg)}}
-.splash-bike-wrap{position:relative;z-index:4;width:250px;height:252px;display:grid;place-items:center;
-  transform-origin:48% 78%;will-change:transform,opacity}
-.splash .splash-bike{width:100%;height:100%;border-radius:0;object-fit:contain;will-change:transform;
-  filter:drop-shadow(0 18px 19px rgba(0,0,0,.66)) drop-shadow(0 0 16px rgba(62,219,32,.13))}
-.splash-headlight{position:absolute;z-index:5;left:37.5%;top:14.5%;width:17%;height:6.5%;
-  border-radius:50%;transform:rotate(8deg);opacity:0;pointer-events:none;
-  background:radial-gradient(ellipse,#fff 0 25%,#efffd0 44%,rgba(194,255,90,.48) 61%,transparent 76%);
-  filter:blur(.7px) drop-shadow(0 0 7px #eaffb0) drop-shadow(0 0 16px #8fe300);will-change:opacity,transform}
-.splash-beam{position:absolute;z-index:3;left:-13%;top:16%;width:55%;height:31%;opacity:0;
-  transform:rotate(-10deg);transform-origin:100% 50%;pointer-events:none;
-  clip-path:polygon(100% 42%,0 0,0 100%,100% 60%);
-  background:linear-gradient(90deg,transparent,rgba(218,255,162,.14) 72%,rgba(238,255,210,.42));
-  filter:blur(5px);will-change:opacity,transform}
-.splash-speedline{position:absolute;z-index:2;right:62%;height:2px;border-radius:99px;
-  background:linear-gradient(90deg,transparent,rgba(143,227,0,.68));opacity:0;will-change:transform,opacity}
-.splash-speedline.a{top:38%;width:112px}.splash-speedline.b{top:51%;width:78px}.splash-speedline.c{top:64%;width:96px}
-.splash-spark{position:absolute;z-index:6;width:7px;height:7px;opacity:0;transform:rotate(45deg);
-  background:#eaffbf;box-shadow:0 0 12px #8fe300;will-change:transform,opacity}
-.splash-spark.a{left:18%;top:27%}.splash-spark.b{right:17%;top:19%;width:5px;height:5px}.splash-spark.c{right:13%;top:54%;width:4px;height:4px}
-@keyframes bike-scene{
-  0%{transform:translate3d(190px,-76px,0) scale(.62) rotate(8deg);opacity:0}
-  9%{opacity:1}48%{transform:translate3d(0,0,0) scale(1) rotate(0);opacity:1}
-  57%{transform:translate3d(-14px,8px,0) scale(1.025,.965) rotate(-4deg)}
-  67%{transform:translate3d(4px,-2px,0) scale(.995,1.01) rotate(1.2deg)}
-  74%,100%{transform:translate3d(0,0,0) scale(1) rotate(0);opacity:1}}
-@keyframes headlight-wink{0%,72%,78%,84%,90%,100%{opacity:0;transform:rotate(8deg) scale(.7)}75%,87%{opacity:1;transform:rotate(8deg) scale(1.22)}}
-@keyframes beam-wink{0%,72%,78%,84%,90%,100%{opacity:0}75%,87%{opacity:1}}
-.splash-road{position:absolute;z-index:1;left:6%;right:6%;bottom:13px;height:54px;overflow:hidden;
-  transform:rotate(-7deg);transform-origin:center;border-radius:50%;border-bottom:2px solid rgba(143,227,0,.22)}
-.splash-road i{position:absolute;left:-30%;right:-30%;bottom:5px;height:3px;
-  background:repeating-linear-gradient(90deg,var(--green) 0 22px,transparent 22px 49px);
-  will-change:transform;opacity:.8}
-@keyframes road-move{0%{transform:translate3d(98px,0,0)}55%{transform:translate3d(-102px,0,0)}100%{transform:translate3d(-102px,0,0)}}
-.splash.css-motion .splash-glow{animation:glow-pulse 2.6s ease-in-out 6}
-.splash.css-motion .splash-ring{animation:ring-spin 1.5s linear 10}
-.splash.css-motion .splash-bike-wrap{animation:bike-scene 3.2s cubic-bezier(.2,.75,.2,1) 8}
-.splash.css-motion .splash-headlight{animation:headlight-wink 3.2s linear 8}
-.splash.css-motion .splash-beam{animation:beam-wink 3.2s linear 8}
-.splash.css-motion .splash-road i{animation:road-move 3.2s cubic-bezier(.2,.7,.25,1) 8}
+/* Анимация загрузки с байком рисуется одним изолированным canvas.
+   Она не создаёт каскад DOM-композиций и не конкурирует с MapGL за слои. */
+.splash-stage{position:relative;width:min(330px,88vw);aspect-ratio:1;display:grid;place-items:center;
+  isolation:isolate;contain:layout paint style;overflow:hidden}
+.splash-motion{position:absolute;inset:0;width:100%;height:100%;display:block}
+.splash-bike-poster{position:absolute;z-index:0;width:72%;height:72%;border-radius:0;object-fit:contain;
+  filter:drop-shadow(0 18px 19px rgba(0,0,0,.66));opacity:.94}
+.splash-stage.canvas-ready .splash-bike-poster{opacity:0}
 
 .splash{position:fixed;inset:0;z-index:3000;display:grid;place-items:center;
   background:radial-gradient(120% 80% at 50% 18%,#123018 0%,#07110b 62%,#050d08 100%);
@@ -1056,15 +1010,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 <main class="app"><div class="map-host" id="map-host" hidden></div><div class="shell" id="app"></div></main>
 <div class="splash" id="app-splash" role="status" aria-live="polite" aria-label="Подготавливаем квест">
   <div class="splash-inner" aria-hidden="true">
-    <div class="splash-stage">
-      <span class="splash-glow"></span>
-      <svg class="splash-ring" viewBox="0 0 100 100"><circle class="splash-ring-track" cx="50" cy="50" r="47"></circle><circle class="splash-ring-progress" cx="50" cy="50" r="47" pathLength="100"></circle></svg>
-      <span class="splash-speedline a"></span><span class="splash-speedline b"></span><span class="splash-speedline c"></span>
-      <span class="splash-beam"></span>
-      <span class="splash-bike-wrap"><img class="splash-bike" src="/static/bb-bike-scooter-cutout.png" alt="" fetchpriority="high" decoding="async" onerror="this.closest('.splash-bike-wrap')?.remove()"><i class="splash-headlight"></i></span>
-      <span class="splash-spark a"></span><span class="splash-spark b"></span><span class="splash-spark c"></span>
-      <span class="splash-road"><i></i></span>
-    </div>
+    <div class="splash-stage"><img class="splash-bike-poster" src="/static/bb-bike-scooter-cutout.png" alt="" fetchpriority="high" decoding="async"><canvas class="splash-motion" width="512" height="512"></canvas></div>
     <p class="splash-sub">Красная Поляна</p>
     <h1 class="splash-title">Бибибайк Квест</h1>
     <p class="splash-tip" id="splash-tip">Три партнёрские точки в долине. На каждой — свой подарок.</p>
@@ -1202,114 +1148,77 @@ const requestIdleCallback=window.requestIdleCallback||(fn=>setTimeout(fn,120));
 // экраны прогреваются, но быстрый телефон не ждёт искусственные пять секунд.
 const SPLASH_MIN_MS=3200,SPLASH_PROGRESS_MS=5000,SPLASH_MAX_MS=26000;
 let splashShown=false,splashNode=null,splashStart=0,splashDone=false,splashTimer=null,splashGeneration=0;
-let splashAnimations=[];
+let splashRaf=0,splashBarAnimation=null,splashMotionImage=null;
 
-/* HyperFrames motion language, исполненная нативным WAAPI: отдельный
-   spring-pop вход, SVG draw кольца, bloom свечения и ограниченный idle
-   байка. WAAPI стабильнее CSS keyframes внутри Android Telegram WebView. */
-function stopSplashMotion(){splashAnimations.forEach(animation=>{try{animation.cancel()}catch(_){}});splashAnimations=[]}
+/* Telegram-подобная сцена: 512×512, трёхсекундный цикл и один canvas.
+   Вместо десяти параллельных DOM/WAAPI-анимаций Android WebView получает
+   один кадр на requestAnimationFrame — карта может спокойно прогреваться рядом. */
+function stopSplashMotion(){
+  if(splashRaf)cancelAnimationFrame(splashRaf);splashRaf=0;
+  try{splashBarAnimation?.cancel()}catch(_){}splashBarAnimation=null}
+
 function startSplashMotion(node){
   if(!node)return;
   stopSplashMotion();
-  if(typeof Element.prototype.animate!=='function'){
-    node.classList.add('css-motion');
-    const progress=node.querySelector('.splash-ring-progress');if(progress)progress.style.strokeDashoffset='0';
-    const bar=node.querySelector('.splash-bar i');if(bar){bar.style.transition=`transform ${SPLASH_PROGRESS_MS}ms linear`;requestAnimationFrame(()=>{bar.style.transform='scaleX(1)'})}
-    return}
-  const reduced=window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
-  const remember=animation=>{splashAnimations.push(animation);return animation};
-  const wrapper=node.querySelector('.splash-bike-wrap');
-  const bike=node.querySelector('.splash-bike');
-  const glow=node.querySelector('.splash-glow');
-  const ring=node.querySelector('.splash-ring');
-  const ringProgress=node.querySelector('.splash-ring-progress');
-  const road=node.querySelector('.splash-road i');
+  const canvas=node.querySelector('.splash-motion'),stage=node.querySelector('.splash-stage');
+  const ctx=canvas?.getContext?.('2d',{alpha:true,desynchronized:true});
   const bar=node.querySelector('.splash-bar i');
-  if(reduced){
-    if(glow){glow.style.opacity='.28';glow.style.transform='scale(1)'}
-    if(ringProgress){ringProgress.style.strokeDashoffset='0';ringProgress.style.opacity='1'}
-    if(road)road.style.transform='translate3d(0,0,0)';
-    if(bar)bar.style.transform='scaleX(1)';
-    if(wrapper)remember(wrapper.animate([
-      {transform:'translate3d(0,8px,0) scale(.94)',opacity:0},
-      {transform:'translate3d(0,0,0) scale(1)',opacity:1}
-    ],{duration:320,easing:'ease-out',fill:'both'}));
-    return}
-  if(glow)remember(glow.animate([
-    {transform:'scale(.82)',opacity:0},
-    {transform:'scale(1)',opacity:.3,offset:.22},
-    {transform:'scale(1.045)',opacity:.38,offset:.55},
-    {transform:'scale(.97)',opacity:.25,offset:.8},
-    {transform:'scale(1.015)',opacity:.34}
-  ],{duration:3000,easing:'ease-in-out',fill:'both',iterations:5}));
-  if(ring)remember(ring.animate([
-    {transform:'rotate(-90deg)'},{transform:'rotate(270deg)'}
-  ],{duration:1450,easing:'linear',fill:'both',iterations:11}));
-  if(ringProgress)remember(ringProgress.animate([
-    {strokeDashoffset:100,opacity:.35},{strokeDashoffset:0,opacity:1}
-  ],{duration:1450,easing:'cubic-bezier(.2,0,0,1)',fill:'both',iterations:11}));
-  const cycle=3200,loops=Math.ceil(SPLASH_MAX_MS/cycle);
-  if(road)remember(road.animate([
-    {transform:'translate3d(98px,0,0)'},
-    {transform:'translate3d(-102px,0,0)',offset:.55},
-    {transform:'translate3d(-102px,0,0)'}
-  ],{duration:cycle,easing:'cubic-bezier(.2,.7,.25,1)',fill:'both',iterations:loops}));
-  if(bar)remember(bar.animate([
-    {transform:'scaleX(0)'},{transform:'scaleX(1)'}
-  ],{duration:SPLASH_PROGRESS_MS,easing:'linear',fill:'both',iterations:1}));
-  const headlight=node.querySelector('.splash-headlight');
-  const beam=node.querySelector('.splash-beam');
-  const lines=[...node.querySelectorAll('.splash-speedline')];
-  const sparks=[...node.querySelectorAll('.splash-spark')];
-  const animateBike=()=>{if(!bike?.isConnected||!wrapper?.isConnected)return;
-    remember(wrapper.animate(reduced?[
-      {transform:'translate3d(0,8px,0) scale(.92)',opacity:0},
-      {transform:'translate3d(0,0,0) scale(1)',opacity:1}
-    ]:[
-      {transform:'translate3d(190px,-76px,0) scale(.62) rotate(8deg)',opacity:0},
-      {transform:'translate3d(154px,-55px,0) scale(.72) rotate(6deg)',opacity:1,offset:.09},
-      {transform:'translate3d(0,0,0) scale(1) rotate(0deg)',opacity:1,offset:.48},
-      {transform:'translate3d(-14px,8px,0) scale(1.025,.965) rotate(-4deg)',opacity:1,offset:.57},
-      {transform:'translate3d(4px,-2px,0) scale(.995,1.01) rotate(1.2deg)',opacity:1,offset:.67},
-      {transform:'translate3d(0,0,0) scale(1) rotate(0deg)',opacity:1,offset:.74},
-      {transform:'translate3d(0,0,0) scale(1) rotate(0deg)',opacity:1}
-    ],{duration:reduced?520:cycle,easing:'cubic-bezier(.2,.75,.2,1)',fill:'both',iterations:reduced?1:loops}));
-    if(!reduced)remember(bike.animate([
-      {transform:'translate3d(0,0,0)'},
-      {transform:'translate3d(0,-3px,0)',offset:.28},
-      {transform:'translate3d(0,2px,0)',offset:.47},
-      {transform:'translate3d(0,0,0)',offset:.7},
-      {transform:'translate3d(0,0,0)'}
-    ],{duration:cycle,easing:'ease-in-out',fill:'both',iterations:loops}))};
-  if(bike?.complete&&bike.naturalWidth)animateBike();
-  else bike?.addEventListener('load',animateBike,{once:true});
-  if(!reduced){
-    const wink=[
-      {opacity:0,transform:'rotate(8deg) scale(.7)'},
-      {opacity:0,transform:'rotate(8deg) scale(.7)',offset:.72},
-      {opacity:.92,transform:'rotate(8deg) scale(1.12)',offset:.75},
-      {opacity:0,transform:'rotate(8deg) scale(.7)',offset:.78},
-      {opacity:0,transform:'rotate(8deg) scale(.7)',offset:.84},
-      {opacity:.92,transform:'rotate(8deg) scale(1.12)',offset:.87},
-      {opacity:0,transform:'rotate(8deg) scale(.7)',offset:.90},
-      {opacity:0,transform:'rotate(8deg) scale(.7)'}];
-    if(headlight)remember(headlight.animate(wink,{duration:cycle,easing:'linear',fill:'both',iterations:loops}));
-    if(beam)remember(beam.animate(wink.map(frame=>({opacity:Number(frame.opacity)*.28,offset:frame.offset})),{duration:cycle,easing:'linear',fill:'both',iterations:loops}));
-    lines.forEach((line,index)=>remember(line.animate([
-      {transform:'translate3d(120px,0,0) scaleX(.35)',opacity:0},
-      {transform:'translate3d(35px,0,0) scaleX(.7)',opacity:.78,offset:.12+index*.025},
-      {transform:'translate3d(-125px,0,0) scaleX(1)',opacity:.25,offset:.5},
-      {transform:'translate3d(-150px,0,0) scaleX(1)',opacity:0,offset:.58},
-      {transform:'translate3d(-150px,0,0) scaleX(1)',opacity:0}
-    ],{duration:cycle,easing:'cubic-bezier(.25,.7,.25,1)',fill:'both',iterations:loops})));
-    sparks.forEach((spark,index)=>remember(spark.animate([
-      {transform:'rotate(45deg) scale(0)',opacity:0},
-      {transform:'rotate(135deg) scale(1)',opacity:1,offset:.77+index*.025},
-      {transform:'rotate(225deg) scale(0)',opacity:0,offset:.88+index*.025},
-      {transform:'rotate(225deg) scale(0)',opacity:0}
-    ],{duration:cycle,easing:'ease-out',fill:'both',iterations:loops})));
-  }
-}
+  const reduced=window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  if(bar){
+    if(reduced)bar.style.transform='scaleX(1)';
+    else if(typeof bar.animate==='function')splashBarAnimation=bar.animate(
+      [{transform:'scaleX(0)'},{transform:'scaleX(1)'}],
+      {duration:SPLASH_PROGRESS_MS,easing:'linear',fill:'both'});
+    else{bar.style.transition=`transform ${SPLASH_PROGRESS_MS}ms linear`;requestAnimationFrame(()=>bar.style.transform='scaleX(1)')}}
+  if(!ctx||!stage)return;
+
+  const backdrop=document.createElement('canvas');backdrop.width=512;backdrop.height=512;
+  const bg=backdrop.getContext('2d');
+  const glow=bg.createRadialGradient(256,238,24,256,238,220);
+  glow.addColorStop(0,'rgba(109,239,35,.25)');glow.addColorStop(.45,'rgba(58,167,37,.10)');glow.addColorStop(1,'rgba(7,17,11,0)');
+  bg.fillStyle=glow;bg.fillRect(0,0,512,512);
+  bg.strokeStyle='rgba(143,227,0,.16)';bg.lineWidth=3;bg.beginPath();bg.arc(256,240,184,0,Math.PI*2);bg.stroke();
+  [[112,160,3],[402,128,2],[420,308,3],[92,330,2]].forEach(([x,y,r])=>{bg.fillStyle='rgba(209,255,145,.52)';bg.beginPath();bg.arc(x,y,r,0,Math.PI*2);bg.fill()});
+
+  const easeOutBack=value=>{const c=1.34,u=value-1;return 1+(c+1)*u*u*u+c*u*u};
+  const pulse=(value,center,width)=>Math.max(0,1-Math.abs(value-center)/width);
+  const render=(time,still=false)=>{
+    if(!canvas.isConnected)return;
+    const t=still ? .78 : ((time-started)%3000)/3000;
+    ctx.clearRect(0,0,512,512);ctx.drawImage(backdrop,0,0);
+    ctx.save();ctx.translate(256,240);ctx.rotate(t*Math.PI*2-Math.PI/2);
+    ctx.strokeStyle='rgba(143,227,0,.96)';ctx.lineWidth=5;ctx.lineCap='round';ctx.shadowColor='rgba(143,227,0,.45)';ctx.shadowBlur=14;
+    ctx.beginPath();ctx.arc(0,0,184,0,Math.PI*1.34);ctx.stroke();ctx.restore();
+
+    ctx.save();ctx.translate(70,410);ctx.rotate(-.08);ctx.strokeStyle='rgba(143,227,0,.27)';ctx.lineWidth=3;ctx.setLineDash([34,30]);ctx.lineDashOffset=-t*260;
+    ctx.beginPath();ctx.moveTo(0,0);ctx.quadraticCurveTo(190,-30,380,0);ctx.stroke();ctx.restore();ctx.setLineDash([]);
+
+    let x=0,y=0,scale=1,angle=0,alpha=1;
+    if(t<.5){const e=easeOutBack(t/.5);x=190*(1-e);y=-72*(1-e);scale=.62+.38*e;angle=.13*(1-e);alpha=Math.min(1,t/.07)}
+    else if(t<.7){const p=(t-.5)/.2;x=-14*Math.sin(p*Math.PI)*(1-p);y=8*Math.sin(p*Math.PI);angle=-.065*Math.sin(p*Math.PI)}
+    else{y=Math.sin((t-.7)/.3*Math.PI*2)*2.2}
+    if(t>.94)alpha=(1-t)/.06;
+
+    if(t<.56){const speed=(1-Math.min(1,t/.56));ctx.lineCap='round';
+      [0,1,2].forEach(i=>{ctx.strokeStyle=`rgba(143,227,0,${(.18+i*.09)*speed})`;ctx.lineWidth=2+i*.45;ctx.beginPath();ctx.moveTo(55-i*8,190+i*46);ctx.lineTo(180+x*.22,190+i*46);ctx.stroke()})}
+
+    ctx.save();ctx.globalAlpha=Math.max(0,alpha);ctx.translate(256+x,248+y);ctx.rotate(angle);ctx.scale(scale,scale);
+    ctx.shadowColor='rgba(0,0,0,.62)';ctx.shadowBlur=24;ctx.shadowOffsetY=16;
+    ctx.drawImage(splashMotionImage,-151,-158,302,314);
+    ctx.shadowColor='transparent';ctx.shadowBlur=0;ctx.shadowOffsetY=0;
+    const wink=Math.min(1,pulse(t,.75,.025)+pulse(t,.865,.025));
+    if(wink>0){const beam=ctx.createRadialGradient(-42,-105,2,-42,-105,52);beam.addColorStop(0,`rgba(255,255,235,${wink})`);beam.addColorStop(.28,`rgba(211,255,145,${wink*.68})`);beam.addColorStop(1,'rgba(143,227,0,0)');ctx.fillStyle=beam;ctx.beginPath();ctx.arc(-42,-105,52,0,Math.PI*2);ctx.fill()}
+    ctx.restore();
+
+    if(t>.64&&t<.92){const life=(t-.64)/.28;[[126,167],[390,142],[408,314]].forEach(([px,py],i)=>{const a=Math.sin(Math.min(1,life+i*.08)*Math.PI);ctx.save();ctx.translate(px+(i-1)*life*16,py-life*24);ctx.rotate(life*Math.PI);ctx.globalAlpha=a;ctx.fillStyle=i?'#8fe300':'#efffcf';ctx.fillRect(-3,-3,6,6);ctx.restore()})}
+    if(!still)splashRaf=requestAnimationFrame(render)};
+
+  const begin=()=>{stage.classList.add('canvas-ready');started=performance.now();render(started,reduced)};
+  let started=performance.now();
+  splashMotionImage=splashMotionImage||new Image();
+  if(!splashMotionImage.src)splashMotionImage.src='/static/bb-bike-scooter-cutout.png';
+  if(splashMotionImage.complete&&splashMotionImage.naturalWidth)begin();
+  else splashMotionImage.addEventListener('load',begin,{once:true})}
 
 function markMapReady(){
   // Карта доложила о готовности (или сообщила, что не запустится) —
@@ -1389,15 +1298,7 @@ function runSplash(force=false){
     node.setAttribute('role','status');node.setAttribute('aria-live','polite');
     node.setAttribute('aria-label','Подготавливаем квест');
     node.innerHTML=`<div class="splash-inner" aria-hidden="true">
-    <div class="splash-stage" aria-hidden="true">
-      <span class="splash-glow"></span>
-      <svg class="splash-ring" viewBox="0 0 100 100"><circle class="splash-ring-track" cx="50" cy="50" r="47"></circle><circle class="splash-ring-progress" cx="50" cy="50" r="47" pathLength="100"></circle></svg>
-      <span class="splash-speedline a"></span><span class="splash-speedline b"></span><span class="splash-speedline c"></span>
-      <span class="splash-beam"></span>
-      <span class="splash-bike-wrap"><img class="splash-bike" src="/static/bb-bike-scooter-cutout.png" alt="" fetchpriority="high" decoding="async" onerror="this.closest('.splash-bike-wrap')?.remove()"><i class="splash-headlight"></i></span>
-      <span class="splash-spark a"></span><span class="splash-spark b"></span><span class="splash-spark c"></span>
-      <span class="splash-road"><i></i></span>
-    </div>
+    <div class="splash-stage" aria-hidden="true"><img class="splash-bike-poster" src="/static/bb-bike-scooter-cutout.png" alt="" fetchpriority="high" decoding="async"><canvas class="splash-motion" width="512" height="512"></canvas></div>
     <p class="splash-sub">Красная Поляна</p>
     <h1 class="splash-title">Бибибайк Квест</h1>
     <p class="splash-tip" id="splash-tip">${esc(SPLASH_TIPS[0])}</p>
@@ -1712,8 +1613,9 @@ function partnerCard(p){
 
 function partnersScreen(){
   sheetOpen=false;
-  // Разметка могла быть посчитана заранее, во время заставки.
-  const ready=screenCache.get('partners');
+  // Используем прогретую разметку только для того же состояния. Раньше кэш
+  // создавался до ответа API с пустым points и скрывал настоящих партнёров.
+  const ready=warmedFingerprint===stateFingerprint(state)?screenCache.get('partners'):null;
   show(ready||partnersMarkup())}
 
 function partnersMarkup(){
@@ -1755,7 +1657,7 @@ function partnerScreen(seq,scanned=false){
   ${tabbar('partners')}`)}
 
 function profileScreen(){
-  const ready=screenCache.get('profile');
+  const ready=warmedFingerprint===stateFingerprint(state)?screenCache.get('profile'):null;
   if(ready)return show(ready);
   return show(profileMarkup())}
 
@@ -2387,7 +2289,7 @@ function render(track=true){
   routeScreen(selectedSeq,track)}
 function stateFingerprint(value){return JSON.stringify({campaign:value?.campaign,session:value?.session,points:value?.points,premium:value?.premium})}
 function canAutoRender(){const tag=document.activeElement?.tagName;return !document.hidden&&!modal.innerHTML&&!qrPopupOpen&&!['INPUT','TEXTAREA','SELECT'].includes(tag)&&!root.querySelector('.rules,.rules-screen,.stamp-success,.stamp-screen,.saved-reward,.scanner-screen')}
-async function refresh(options={}){const silent=!!options.silent;if(syncInFlight)return;syncInFlight=true;try{const payload=await api('/api/quest/state');if(lastBuildVersion&&payload.build_version&&payload.build_version!==lastBuildVersion){if(canAutoRender())location.reload();return}if(payload.build_version)lastBuildVersion=payload.build_version;const before=stateFingerprint(state),after=stateFingerprint(payload.data),changed=before!==after;state=payload.data;botUsername=payload.bot_username||'';cacheState(state);if(!silent){pendingAutoRender=false;render(true)}else if(changed||pendingAutoRender){if(canAutoRender()){pendingAutoRender=false;render(false)}else pendingAutoRender=true}}catch(e){if(silent)return;const saved=cachedState();if(saved){state=saved;setOffline(true);toast('Нет связи — открыт сохранённый квест');return render(false)}emptyState('Не получилось открыть квест',e.message||'Проверь интернет и попробуй ещё раз.');finishSplashWithoutMap()}finally{syncInFlight=false}}
+async function refresh(options={}){const silent=!!options.silent;if(syncInFlight)return;syncInFlight=true;try{const payload=await api('/api/quest/state');if(lastBuildVersion&&payload.build_version&&payload.build_version!==lastBuildVersion){if(canAutoRender())location.reload();return}if(payload.build_version)lastBuildVersion=payload.build_version;const before=stateFingerprint(state),after=stateFingerprint(payload.data),changed=before!==after;state=payload.data;botUsername=payload.bot_username||'';cacheState(state);warmupScreens();if(!silent){pendingAutoRender=false;render(true)}else if(changed||pendingAutoRender){if(canAutoRender()){pendingAutoRender=false;render(false)}else pendingAutoRender=true}}catch(e){if(silent)return;const saved=cachedState();if(saved){state=saved;setOffline(true);warmupScreens();toast('Нет связи — открыт сохранённый квест');return render(false)}emptyState('Не получилось открыть квест',e.message||'Проверь интернет и попробуй ещё раз.');finishSplashWithoutMap()}finally{syncInFlight=false}}
 async function publicLanding(){try{const payload=await fetch('/api/public/info',{cache:'no-store'}).then(r=>r.json());const app=payload.app_url||payload.chat_url,chat=payload.chat_url||app;show(`<section class="passport-cover public-cover"><div class="cover-grain"></div><div class="cover-brand"><img src="/static/bb-bike-logo.jpg" alt="Бибибайк"><span>КВЕСТ · КРАСНАЯ ПОЛЯНА</span></div><div class="cover-copy"><p class="micro">КВЕСТ КРАСНОЙ ПОЛЯНЫ</p><h1>Пройди городской квест</h1><p>Три места, три подарка и Подписка 30 дней. Прогресс хранится внутри Telegram.</p></div><a class="btn cover-button public-link" href="${esc(app)}">Открыть приложение</a><a class="btn quiet public-link" href="${esc(chat)}">Перейти в чат с ботом</a></section>`)}catch(_){emptyState('Открой квест в Telegram','Эта страница работает внутри личного чата с ботом.')}finally{finishSplashWithoutMap()}}
 window.addEventListener('offline',()=>{setOffline(true);toast('Нет сети. Прогресс квеста сохранён.')});
 window.addEventListener('online',()=>refresh({silent:true}));

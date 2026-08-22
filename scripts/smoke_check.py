@@ -244,10 +244,11 @@ async def main() -> None:
     assert "Telegram ID:" in admin_app and "ID участника:" in admin_app
     assert "function useMapgl(){return !!mapglKey()&&!!window.mapgl&&!window.__mapglFailed}" in webapp
     assert "function initGlMap(" in webapp and "new mapgl.Map(node,opts)" in webapp
-    assert "function startSplashMotion(" in webapp and "Element.prototype.animate" in webapp
+    assert "function startSplashMotion(" in webapp and "requestAnimationFrame(render)" in webapp
     assert "function primeRouteMap(" in webapp and "return rules('',true)" in webapp
     assert 'rel="preload" href="/static/bb-bike-scooter-cutout.png"' in webapp
-    assert 'class="splash-headlight"' in webapp
+    assert 'class="splash-motion" width="512" height="512"' in webapp
+    assert "warmedFingerprint===stateFingerprint(state)?screenCache.get('partners'):null" in webapp
     assert 'id="map-loading-layer"' not in webapp and 'Загружаем карту 2ГИС' not in webapp
     assert 'runSplash();loadMapgl(()=>{});return refresh()' in webapp
     assert 'splashTimer=setTimeout(()=>finishSplashAfterMapTimeout(generation),SPLASH_MAX_MS)' in webapp
