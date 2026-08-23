@@ -43,7 +43,10 @@ async def production_reward_scenario() -> None:
                 })
                 codes.append(await service.rotate_qr(0, point["id"]))
             await service.admin_update_campaign(0, {"status": "active", "session_duration_min": 240})
-            await service.start(identity, True)
+            started, created = await service.start_with_status(identity, True)
+            assert created is True and started["session"]["status"] == "active"
+            resumed, created_again = await service.start_with_status(identity, True)
+            assert created_again is False and resumed["session"]["id"] == started["session"]["id"]
             state = await service.scan(identity, codes[0], "production-scan")
             reward = state["points"][0]
             assert "reward_code" not in reward and reward["reward_available"] and not reward["reward_used"]
@@ -204,6 +207,10 @@ async def main() -> None:
     assert share_result.video_url.endswith("/static/bbbike-quest-invite.mp4?v=abc123")
     assert share_result.caption == production.QUEST_SHARE_TEXT
     assert share_result.reply_markup.inline_keyboard[0][0].url == "https://t.me/quest_bot?startapp=quest"
+    source = (root / "main.py").read_text(encoding="utf-8")
+    assert "await send_welcome(message)" in source
+    assert "caption=QUEST_SHARE_TEXT" in source and "FSInputFile(" in source
+    assert "notify_admins_about_participant(identity, data)" in source
     class SetupBot:
         name = ""
         commands = []
@@ -258,7 +265,8 @@ async def main() -> None:
     assert "animation:gift-bike-ride 3s linear infinite" in webapp
     assert 'class="splash-bike-wrap"' in webapp and 'class="splash-headlight"' in webapp
     assert 'class="splash-motion" width="512" height="512"' in webapp
-    assert "warmedFingerprint===stateFingerprint(state)?screenCache.get('partners'):null" in webapp
+    assert "screenCache.get('partners')" not in webapp
+    assert "async function partnersScreen()" in webapp and "Загружаем партнёров" in webapp
     assert 'id="map-loading-layer"' not in webapp and 'Загружаем карту 2ГИС' not in webapp
     assert 'runSplash();loadMapgl(()=>{});return refresh()' in webapp
     assert 'splashTimer=setTimeout(()=>finishSplashAfterMapTimeout(generation),SPLASH_MAX_MS)' in webapp

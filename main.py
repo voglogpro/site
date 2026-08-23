@@ -43,7 +43,7 @@ from aiogram.exceptions import (
 )
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import (
-    BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup,
+    BotCommand, CallbackQuery, FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup,
     InlineQueryResultVideo, MenuButtonWebApp, Message, WebAppInfo,
 )
 from aiohttp import web
@@ -1156,7 +1156,15 @@ class QuestService:
         conn = db or self.db.connection
         return await (await conn.execute("SELECT * FROM campaigns ORDER BY id LIMIT 1")).fetchone()
 
-    async def start(self, identity: TelegramIdentity, privacy_accepted: bool) -> dict:
+    async def start_with_status(
+        self, identity: TelegramIdentity, privacy_accepted: bool
+    ) -> tuple[dict, bool]:
+        """Start or resume a quest and report whether a new session was created.
+
+        The flag is produced inside the same per-user lock as the insert. This lets
+        callers send a single "new participant" notification even when the client
+        retries the request.
+        """
         if not privacy_accepted:
             raise QuestError("rules_required", "Нужно согласиться с правилами квеста.")
         await self.upsert_participant(identity, True)
@@ -1170,7 +1178,7 @@ class QuestService:
                 )).fetchone()
                 if existing:
                     await self._resume_expired_in_tx(db, identity.user_id, campaign)
-                    return await self._state_in_tx(db, identity.user_id)
+                    return await self._state_in_tx(db, identity.user_id), False
                 points = await (await db.execute(
                     "SELECT * FROM points WHERE campaign_id=? AND active=1 ORDER BY seq", (campaign["id"],)
                 )).fetchall()
@@ -1192,7 +1200,11 @@ class QuestService:
                          point["photo_url"] if "photo_url" in point.keys() else "",
                          point["description"] if "description" in point.keys() else ""),
                     )
-                return await self._state_in_tx(db, identity.user_id)
+                return await self._state_in_tx(db, identity.user_id), True
+
+    async def start(self, identity: TelegramIdentity, privacy_accepted: bool) -> dict:
+        data, _ = await self.start_with_status(identity, privacy_accepted)
+        return data
 
     async def state(self, identity: TelegramIdentity) -> dict:
         await self.upsert_participant(identity)
@@ -2414,6 +2426,56 @@ async def setup_bot_commands(bot: Bot, settings: Settings) -> None:
 
 def build_router(service: QuestService, settings: Settings) -> Router:
     router = Router(name="quest")
+    welcome_video_file_id = ""
+    welcome_video_lock = asyncio.Lock()
+
+    async def send_welcome(message: Message) -> None:
+        """Send exactly the same video and caption as the invite share card."""
+        nonlocal welcome_video_file_id
+
+        async def upload_local() -> Message:
+            video = FSInputFile(
+                Path(__file__).resolve().parent / "static" / QUEST_SHARE_VIDEO,
+                filename=QUEST_SHARE_VIDEO,
+            )
+            return await message.answer_video(
+                video=video,
+                caption=QUEST_SHARE_TEXT,
+                parse_mode=None,
+                reply_markup=quest_keyboard(settings),
+                supports_streaming=True,
+                width=1072,
+                height=1920,
+                duration=34,
+            )
+
+        if welcome_video_file_id:
+            try:
+                await message.answer_video(
+                    video=welcome_video_file_id,
+                    caption=QUEST_SHARE_TEXT,
+                    parse_mode=None,
+                    reply_markup=quest_keyboard(settings),
+                    supports_streaming=True,
+                )
+                return
+            except TelegramBadRequest:
+                # Telegram can invalidate a cached file_id after media changes.
+                welcome_video_file_id = ""
+
+        async with welcome_video_lock:
+            if welcome_video_file_id:
+                await message.answer_video(
+                    video=welcome_video_file_id,
+                    caption=QUEST_SHARE_TEXT,
+                    parse_mode=None,
+                    reply_markup=quest_keyboard(settings),
+                    supports_streaming=True,
+                )
+                return
+            sent = await upload_local()
+            if sent.video:
+                welcome_video_file_id = sent.video.file_id
 
     @router.message(CommandStart())
     async def start(message: Message, command: CommandObject):
@@ -2441,21 +2503,18 @@ def build_router(service: QuestService, settings: Settings) -> Router:
                 reply_markup=quest_keyboard(settings),
             )
             return
-        text = (
-            "<b>Добро пожаловать в квест Бибибайк</b> 💚\n\n"
-            "Гуляй по Красной Поляне, отмечайся на локациях, получай подарки "
-            "от наших партнёров. А за завершённый квест — Подписка 30 дней "
-            "для бесплатного старта на байке.\n\n"
-            "Здесь всё просто:\n"
-            "1. Выбери любую из трёх точек.\n"
-            "2. Построй маршрут в Яндекс Картах или 2ГИС.\n"
-            "3. На месте отсканируй QR через мини-приложение и забери подарок.\n\n"
-            "Как только отсканировано 3 уникальных QR-кода — квест считается "
-            "пройденным. А в подарок — Подписка 30 дней для бесплатного старта на байке 🛵\n\n"
-            "Во время поездки следи за дорогой, а телефон используй только "
-            "после полной остановки."
-        )
-        await message.answer(text, reply_markup=quest_keyboard(settings))
+        try:
+            await send_welcome(message)
+        except (TelegramAPIError, OSError):
+            logging.getLogger("bibibike.quest.welcome").exception(
+                "Не удалось отправить приветственное видео пользователю %s",
+                message.from_user.id,
+            )
+            await message.answer(
+                QUEST_SHARE_TEXT,
+                parse_mode=None,
+                reply_markup=quest_keyboard(settings),
+            )
 
     @router.message(Command("progress"))
     async def progress(message: Message):
@@ -2759,6 +2818,38 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
     limiter = RateLimiter()
     bot_username_cache = ""
 
+    async def notify_admins_about_participant(
+        identity: TelegramIdentity, data: dict
+    ) -> None:
+        session = data.get("session") or {}
+        premium = data.get("premium") or {}
+        username = f"@{html.escape(identity.username)}" if identity.username else "не указан"
+        public_code = premium.get("public_code") or "будет выдан после завершения"
+        text = (
+            "<b>Новый участник вступил в квест</b> 💚\n\n"
+            f"Имя: {html.escape(identity.display_name)}\n"
+            f"Telegram: {username}\n"
+            f"Telegram ID: <code>{identity.user_id}</code>\n"
+            f"ID участника: <code>{html.escape(public_code)}</code>\n"
+            f"Сессия: <code>{html.escape(str(session.get('id') or '—'))}</code>\n"
+            "Прогресс: 0 из 3"
+        )
+        recipients = (set(settings.admin_ids) | set(GRANTED_ADMINS)) - {identity.user_id}
+        for admin_id in sorted(recipients):
+            try:
+                await bot.send_message(
+                    admin_id,
+                    text,
+                    reply_markup=admin_keyboard(settings, admin_id),
+                )
+            except TelegramAPIError as exc:
+                log.warning(
+                    "Не удалось уведомить администратора %s о новом участнике %s: %s",
+                    admin_id,
+                    identity.user_id,
+                    exc,
+                )
+
     @web.middleware
     async def security_middleware(request, handler):
         response = await handler(request)
@@ -3060,7 +3151,14 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         if not limiter.allow(f"start:{identity.user_id}", 5):
             raise QuestError("rate_limited", "Попробуй через минуту.", 429)
         body = await json_body(request)
-        data = await service.start(identity, bool(body.get("privacy_accepted")))
+        data, created = await service.start_with_status(
+            identity, bool(body.get("privacy_accepted"))
+        )
+        if created:
+            asyncio.create_task(
+                notify_admins_about_participant(identity, data),
+                name=f"notify-new-participant-{identity.user_id}",
+            )
         return json_response({"data": data}, 201)
 
     async def event(request):

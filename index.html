@@ -1165,11 +1165,10 @@ function warmupScreens(){
   // всё равно прогревает вкладки во время заставки, но оставляет кадрам приоритет.
   setTimeout(()=>requestIdleCallback(warmNextImage),320);
 
-  // Разметку вкладок считаем заранее и кладём в кэш: при переходе
-  // остаётся только вставить готовую строку.
+  // Профиль можно безопасно прогреть. Партнёры всегда строятся из текущего
+  // state: кэш пустого раннего ответа раньше оставлял вкладку без заведений.
   requestIdleCallback(()=>{
     try{
-      screenCache.set('partners',partnersMarkup());
       screenCache.set('profile',profileMarkup());
     }catch(_){/* прогрев не обязан удаваться */}
   })}
@@ -1666,12 +1665,23 @@ function partnerCard(p){
     <div class="partner-meta"><span>${esc(p.address)}</span>${p.partner_hours?`<span>${esc(p.partner_hours)}</span>`:''}${d!=null?`<span>${fmt(d)} от тебя</span>`:''}</div>
   </button>`}
 
-function partnersScreen(){
+async function partnersScreen(){
   sheetOpen=false;
-  // Используем прогретую разметку только для того же состояния. Раньше кэш
-  // создавался до ответа API с пустым points и скрывал настоящих партнёров.
-  const ready=warmedFingerprint===stateFingerprint(state)?screenCache.get('partners'):null;
-  show(ready||partnersMarkup())}
+  if((state?.points||[]).length)return show(partnersMarkup());
+  const saved=cachedState();
+  if((saved?.points||[]).length){state=saved;return show(partnersMarkup())}
+  show(`${header(`<span class="count-label">0 / 3</span>${tabbar("partners")}`)}
+    <section class="partners-head"><p class="micro">БИБИБАЙК · КРАСНАЯ ПОЛЯНА</p><h1>Наши партнёры</h1></section>
+    <section class="empty"><div class="loader-dot"></div><h2>Загружаем партнёров</h2><p>Получаем актуальные заведения и подарки.</p></section>`);
+  try{
+    const payload=await api('/api/quest/state');
+    state=payload.data;cacheState(state);warmupScreens();
+    show(partnersMarkup())
+  }catch(error){
+    show(`${header(`<span class="count-label">0 / 3</span>${tabbar("partners")}`)}
+      <section class="partners-head"><p class="micro">БИБИБАЙК · КРАСНАЯ ПОЛЯНА</p><h1>Наши партнёры</h1></section>
+      <section class="empty"><h2>Не удалось загрузить партнёров</h2><p>${esc(error.message||'Проверь интернет и попробуй снова.')}</p><button class="btn primary" onclick="partnersScreen()">Повторить</button></section>`)
+  }}
 
 function partnersMarkup(){
   const pts=orderedPoints(),n=completed();
@@ -1681,7 +1691,7 @@ function partnersMarkup(){
     <h1>Наши партнёры</h1>
     <p>Заведения долины, которые дарят подарки участникам квеста. Заходи, показывай приложение и забирай своё.</p>
   </section>
-  <section class="partner-list">${pts.map(partnerCard).join('')}</section>`)}
+  <section class="partner-list">${pts.length?pts.map(partnerCard).join(''):'<div class="empty"><h2>Партнёры пока не появились</h2><p>Обнови список — данные могли ещё загружаться.</p><button class="btn primary" onclick="partnersScreen()">Обновить</button></div>'}</section>`)}
 
 function partnerScreen(seq,scanned=false){
   const p=pointBySeq(seq);
