@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://keys.api.2gis.com" crossorigin>
   <link rel="preconnect" href="https://styles.api.2gis.com" crossorigin>
   <link rel="dns-prefetch" href="//mapgl.2gis.com">
-  <link rel="preload" href="/static/bb-bike-scooter-cutout.png" as="image" type="image/png" fetchpriority="high">
+  <link rel="preload" href="/static/bb-bike-gift-v1.webp" as="image" type="image/webp" fetchpriority="high">
   <style>
 /* Стили встроены в файл: отдельный app.css больше не нужен. */
 :root{
@@ -735,14 +735,43 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .map-host.warming{opacity:0;pointer-events:none}
 .app:has(.map-host:not([hidden]):not(.warming)) .shell{background:transparent}
 
-/* Анимация загрузки с байком рисуется одним изолированным canvas.
-   Она не создаёт каскад DOM-композиций и не конкурирует с MapGL за слои. */
+/* Байк, фара и «БИ-БИ!» двигаются только через transform/opacity: браузер
+   переносит эти слои на GPU, и холодный запуск MapGL не останавливает героя.
+   Canvas оставлен для лёгкого декоративного фона и частиц. */
 .splash-stage{position:relative;width:min(330px,88vw);aspect-ratio:1;display:grid;place-items:center;
   isolation:isolate;contain:layout paint style;overflow:hidden}
-.splash-motion{position:absolute;inset:0;width:100%;height:100%;display:block}
-.splash-bike-poster{position:absolute;z-index:0;width:72%;height:72%;border-radius:0;object-fit:contain;
-  filter:drop-shadow(0 18px 19px rgba(0,0,0,.66));opacity:.94}
-.splash-stage.canvas-ready .splash-bike-poster{opacity:0}
+.splash-motion{position:absolute;z-index:0;inset:0;width:100%;height:100%;display:block}
+.splash-bike-wrap{position:absolute;z-index:2;left:50%;top:48.5%;width:61%;transform-origin:50% 76%;
+  will-change:transform,opacity;animation:gift-bike-ride 3s linear infinite}
+.splash .splash-bike-poster{display:block;width:100%;height:auto;border-radius:0;object-fit:contain;
+  filter:drop-shadow(0 18px 19px rgba(0,0,0,.66))}
+.splash-headlight{position:absolute;z-index:3;left:43.5%;top:14.5%;width:33%;aspect-ratio:1;border-radius:50%;
+  opacity:0;pointer-events:none;will-change:transform,opacity;
+  background:radial-gradient(circle,rgba(255,255,238,.98) 0 8%,rgba(211,255,145,.72) 20%,rgba(143,227,0,.3) 43%,rgba(143,227,0,0) 72%);
+  transform:translate(-50%,-50%) scale(.35);animation:gift-headlight 3s linear infinite}
+.splash-horn{position:absolute;z-index:4;right:7%;top:10%;padding:9px 14px;border-radius:16px;
+  color:#07110b;background:linear-gradient(135deg,#dfff9d,#8fe300);box-shadow:0 0 18px rgba(143,227,0,.48);
+  font:900 16px/1 Montserrat,var(--font);font-style:normal;opacity:0;will-change:transform,opacity;
+  transform:translate3d(0,8px,0) rotate(2.5deg) scale(.72);animation:gift-horn 3s linear infinite}
+.splash-horn:after{content:"";position:absolute;right:14px;bottom:-10px;border-width:12px 4px 0 15px;
+  border-style:solid;border-color:#8fe300 transparent transparent transparent;transform:rotate(8deg)}
+.splash-stage.bike-fallback .splash-bike-wrap{display:none}
+@keyframes gift-bike-ride{
+  0%{opacity:0;transform:translate(-50%,-50%) translate3d(61%,-24%,0) rotate(7.5deg) scale(.62)}
+  7%{opacity:1}
+  50%{opacity:1;transform:translate(-50%,-50%) translate3d(0,0,0) rotate(0) scale(1)}
+  60%{transform:translate(-50%,-50%) translate3d(-2.3%,2.7%,0) rotate(-3.7deg) scale(1.026,.955)}
+  70%{transform:translate(-50%,-50%) translate3d(0,0,0) rotate(0) scale(1)}
+  75%{transform:translate(-50%,-50%) translate3d(0,.7%,0) rotate(0) scale(1)}
+  86.5%{transform:translate(-50%,-50%) translate3d(0,-.6%,0) rotate(0) scale(1)}
+  94%{opacity:1;transform:translate(-50%,-50%) translate3d(0,0,0) rotate(0) scale(1)}
+  100%{opacity:0;transform:translate(-50%,-50%) translate3d(0,0,0) rotate(0) scale(1)}}
+@keyframes gift-headlight{
+  0%,72%,78%,83.5%,89.5%,100%{opacity:0;transform:translate(-50%,-50%) scale(.35)}
+  75%,86.5%{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+@keyframes gift-horn{
+  0%,71.8%,78.2%,83.3%,89.7%,100%{opacity:0;transform:translate3d(0,8px,0) rotate(2.5deg) scale(.72)}
+  75%,86.5%{opacity:1;transform:translate3d(0,0,0) rotate(2.5deg) scale(1)}}
 
 .splash{position:fixed;inset:0;z-index:3000;display:grid;place-items:center;
   background:radial-gradient(120% 80% at 50% 18%,#123018 0%,#07110b 62%,#050d08 100%);
@@ -765,6 +794,9 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 @keyframes splash-fill{to{width:100%}}
 @media (prefers-reduced-motion:reduce){
   .splash-inner{animation-duration:.2s}.splash-speedline,.splash-spark{display:none}
+  .splash-bike-wrap{animation:none!important;opacity:1!important;transform:translate(-50%,-50%)!important}
+  .splash-headlight{animation:none!important;opacity:.72!important;transform:translate(-50%,-50%) scale(.72)!important}
+  .splash-horn{animation:none!important;opacity:1!important;transform:rotate(2.5deg) scale(1)!important}
 }
 
 /* --- Кнопка «где я» на карте --- */
@@ -1010,7 +1042,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 <main class="app"><div class="map-host" id="map-host" hidden></div><div class="shell" id="app"></div></main>
 <div class="splash" id="app-splash" role="status" aria-live="polite" aria-label="Подготавливаем квест">
   <div class="splash-inner" aria-hidden="true">
-    <div class="splash-stage"><img class="splash-bike-poster" src="/static/bb-bike-scooter-cutout.png" alt="" fetchpriority="high" decoding="async"><canvas class="splash-motion" width="512" height="512"></canvas></div>
+    <div class="splash-stage"><canvas class="splash-motion" width="512" height="512"></canvas><div class="splash-bike-wrap"><img class="splash-bike-poster" src="/static/bb-bike-gift-v1.webp" alt="" fetchpriority="high" decoding="async"><i class="splash-headlight"></i></div><i class="splash-horn">БИ-БИ!</i></div>
     <p class="splash-sub">Красная Поляна</p>
     <h1 class="splash-title">Бибибайк Квест</h1>
     <p class="splash-tip" id="splash-tip">Три партнёрские точки в долине. На каждой — свой подарок.</p>
@@ -1106,23 +1138,32 @@ let mapReadyTimer=null,mapContextCleanup=null,mapAttemptId=0;
    когда человек смотрит анимацию, а не в момент нажатия. */
 const screenCache=new Map();
 let warmedFingerprint='';
+let warmupGeneration=0;
 
 function warmupScreens(){
   const fingerprint=stateFingerprint(state);
   if(warmedFingerprint===fingerprint)return;
   warmedFingerprint=fingerprint;
   screenCache.clear();
+  const generation=++warmupGeneration;
 
   // Фотографии — самая частая причина подтормаживания при первом
   // открытии «Партнёров»: браузер декодирует их в момент показа.
-  const images=['/static/bb-bike-logo.jpg','/static/bb-bike-scooter-cutout.png'];
+  // Подарочный байк уже идёт через preload и собственный <img>; повторный
+  // decode здесь лишь создавал третью попытку запроса при сетевой ошибке.
+  const images=['/static/bb-bike-logo.jpg'];
   (state?.points||[]).forEach(point=>{if(point.photo_url)images.push(point.photo_url)});
-  images.forEach(src=>{
-    const image=new Image();
-    image.decoding='async';
-    image.src=src;
-    if(image.decode)image.decode().catch(()=>{});
-  });
+  const imageQueue=[...new Set(images)];
+  const warmNextImage=()=>{
+    if(generation!==warmupGeneration)return;
+    const src=imageQueue.shift();if(!src)return;
+    const image=new Image();image.decoding='async';image.src=src;
+    const decoded=typeof image.decode==='function'?image.decode():Promise.resolve();
+    Promise.resolve(decoded).catch(()=>{}).finally(()=>setTimeout(()=>requestIdleCallback(warmNextImage),80))};
+  // Не декодируем все фотографии одним пакетом: на слабом Android это отнимало
+  // у первого цикла canvas сотни миллисекунд. Очередь по одному изображению
+  // всё равно прогревает вкладки во время заставки, но оставляет кадрам приоритет.
+  setTimeout(()=>requestIdleCallback(warmNextImage),320);
 
   // Разметку вкладок считаем заранее и кладём в кэш: при переходе
   // остаётся только вставить готовую строку.
@@ -1148,7 +1189,7 @@ const requestIdleCallback=window.requestIdleCallback||(fn=>setTimeout(fn,120));
 // экраны прогреваются, но быстрый телефон не ждёт искусственные пять секунд.
 const SPLASH_MIN_MS=3200,SPLASH_PROGRESS_MS=5000,SPLASH_MAX_MS=26000;
 let splashShown=false,splashNode=null,splashStart=0,splashDone=false,splashTimer=null,splashGeneration=0;
-let splashRaf=0,splashBarAnimation=null,splashMotionImage=null;
+let splashRaf=0,splashBarAnimation=null;
 
 /* Telegram-подобная сцена: 512×512, трёхсекундный цикл и один canvas.
    Вместо десяти параллельных DOM/WAAPI-анимаций Android WebView получает
@@ -1161,6 +1202,8 @@ function startSplashMotion(node){
   if(!node)return;
   stopSplashMotion();
   const canvas=node.querySelector('.splash-motion'),stage=node.querySelector('.splash-stage');
+  const renderDensity=Math.min(1.75,Math.max(1,window.devicePixelRatio||1));
+  if(canvas){canvas.width=Math.round(512*renderDensity);canvas.height=Math.round(512*renderDensity)}
   const ctx=canvas?.getContext?.('2d',{alpha:true,desynchronized:true});
   const bar=node.querySelector('.splash-bar i');
   const reduced=window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
@@ -1182,9 +1225,12 @@ function startSplashMotion(node){
 
   const easeOutBack=value=>{const c=1.34,u=value-1;return 1+(c+1)*u*u*u+c*u*u};
   const pulse=(value,center,width)=>Math.max(0,1-Math.abs(value-center)/width);
+  const roundedRect=(context,x,y,w,h,r)=>{context.beginPath();context.moveTo(x+r,y);context.arcTo(x+w,y,x+w,y+h,r);context.arcTo(x+w,y+h,x,y+h,r);context.arcTo(x,y+h,x,y,r);context.arcTo(x,y,x+w,y,r);context.closePath()};
+  const drawFallbackBike=context=>{context.save();context.lineCap='round';context.lineJoin='round';context.fillStyle='#0a0f0c';context.strokeStyle='#8fe300';context.lineWidth=7;[-78,78].forEach(x=>{context.beginPath();context.arc(x,61,31,0,Math.PI*2);context.fill();context.stroke()});context.fillStyle='#8fe300';roundedRect(context,-80,-9,157,55,22);context.fill();roundedRect(context,-67,-93,64,121,27);context.fill();context.strokeStyle='#dfff9d';context.lineWidth=8;context.beginPath();context.moveTo(-35,-83);context.lineTo(-17,-126);context.lineTo(40,-126);context.stroke();context.fillStyle='#07110b';context.font='900 34px Montserrat,Arial,sans-serif';context.textAlign='center';context.textBaseline='middle';context.fillText('ББ',-35,-33);context.fillStyle='#efffcf';context.beginPath();context.arc(-17,-113,12,0,Math.PI*2);context.fill();context.restore()};
   const render=(time,still=false)=>{
     if(!canvas.isConnected)return;
-    const t=still ? .78 : ((time-started)%3000)/3000;
+    const t=still ? .75 : ((time-started)%3000)/3000;
+    ctx.setTransform(renderDensity,0,0,renderDensity,0,0);
     ctx.clearRect(0,0,512,512);ctx.drawImage(backdrop,0,0);
     ctx.save();ctx.translate(256,240);ctx.rotate(t*Math.PI*2-Math.PI/2);
     ctx.strokeStyle='rgba(143,227,0,.96)';ctx.lineWidth=5;ctx.lineCap='round';ctx.shadowColor='rgba(143,227,0,.45)';ctx.shadowBlur=14;
@@ -1193,32 +1239,41 @@ function startSplashMotion(node){
     ctx.save();ctx.translate(70,410);ctx.rotate(-.08);ctx.strokeStyle='rgba(143,227,0,.27)';ctx.lineWidth=3;ctx.setLineDash([34,30]);ctx.lineDashOffset=-t*260;
     ctx.beginPath();ctx.moveTo(0,0);ctx.quadraticCurveTo(190,-30,380,0);ctx.stroke();ctx.restore();ctx.setLineDash([]);
 
-    let x=0,y=0,scale=1,angle=0,alpha=1;
+    const platform=ctx.createRadialGradient(256,399,12,256,399,145);platform.addColorStop(0,'rgba(143,227,0,.24)');platform.addColorStop(.6,'rgba(47,116,35,.12)');platform.addColorStop(1,'rgba(7,17,11,0)');ctx.fillStyle=platform;ctx.beginPath();ctx.ellipse(256,399,145,34,0,0,Math.PI*2);ctx.fill();
+
+    let x=0,y=0,scale=1,scaleX=1,scaleY=1,angle=0,alpha=1;
     if(t<.5){const e=easeOutBack(t/.5);x=190*(1-e);y=-72*(1-e);scale=.62+.38*e;angle=.13*(1-e);alpha=Math.min(1,t/.07)}
-    else if(t<.7){const p=(t-.5)/.2;x=-14*Math.sin(p*Math.PI)*(1-p);y=8*Math.sin(p*Math.PI);angle=-.065*Math.sin(p*Math.PI)}
+    else if(t<.7){const p=(t-.5)/.2,s=Math.sin(p*Math.PI);x=-14*s*(1-p);y=8*s;angle=-.065*s;scaleX=1+.026*s;scaleY=1-.045*s}
     else{y=Math.sin((t-.7)/.3*Math.PI*2)*2.2}
     if(t>.94)alpha=(1-t)/.06;
 
     if(t<.56){const speed=(1-Math.min(1,t/.56));ctx.lineCap='round';
       [0,1,2].forEach(i=>{ctx.strokeStyle=`rgba(143,227,0,${(.18+i*.09)*speed})`;ctx.lineWidth=2+i*.45;ctx.beginPath();ctx.moveTo(55-i*8,190+i*46);ctx.lineTo(180+x*.22,190+i*46);ctx.stroke()})}
 
-    ctx.save();ctx.globalAlpha=Math.max(0,alpha);ctx.translate(256+x,248+y);ctx.rotate(angle);ctx.scale(scale,scale);
-    ctx.shadowColor='rgba(0,0,0,.62)';ctx.shadowBlur=24;ctx.shadowOffsetY=16;
-    ctx.drawImage(splashMotionImage,-151,-158,302,314);
-    ctx.shadowColor='transparent';ctx.shadowBlur=0;ctx.shadowOffsetY=0;
-    const wink=Math.min(1,pulse(t,.75,.025)+pulse(t,.865,.025));
-    if(wink>0){const beam=ctx.createRadialGradient(-42,-105,2,-42,-105,52);beam.addColorStop(0,`rgba(255,255,235,${wink})`);beam.addColorStop(.28,`rgba(211,255,145,${wink*.68})`);beam.addColorStop(1,'rgba(143,227,0,0)');ctx.fillStyle=beam;ctx.beginPath();ctx.arc(-42,-105,52,0,Math.PI*2);ctx.fill()}
-    ctx.restore();
+    if(stage.classList.contains('bike-fallback')){
+      ctx.save();ctx.globalAlpha=Math.max(0,alpha);ctx.translate(256+x,248+y);ctx.rotate(angle);ctx.scale(scale*scaleX,scale*scaleY);
+      ctx.shadowColor='rgba(0,0,0,.62)';ctx.shadowBlur=24;ctx.shadowOffsetY=16;drawFallbackBike(ctx);
+      ctx.shadowColor='transparent';ctx.shadowBlur=0;ctx.shadowOffsetY=0;
+      const wink=Math.min(1,pulse(t,.75,.025)+pulse(t,.865,.025));
+      if(wink>0){const beam=ctx.createRadialGradient(-17,-113,2,-17,-113,52);beam.addColorStop(0,`rgba(255,255,235,${wink})`);beam.addColorStop(.28,`rgba(211,255,145,${wink*.68})`);beam.addColorStop(1,'rgba(143,227,0,0)');ctx.fillStyle=beam;ctx.beginPath();ctx.arc(-17,-113,52,0,Math.PI*2);ctx.fill()}
+      ctx.restore()}
 
     if(t>.64&&t<.92){const life=(t-.64)/.28;[[126,167],[390,142],[408,314]].forEach(([px,py],i)=>{const a=Math.sin(Math.min(1,life+i*.08)*Math.PI);ctx.save();ctx.translate(px+(i-1)*life*16,py-life*24);ctx.rotate(life*Math.PI);ctx.globalAlpha=a;ctx.fillStyle=i?'#8fe300':'#efffcf';ctx.fillRect(-3,-3,6,6);ctx.restore()})}
     if(!still)splashRaf=requestAnimationFrame(render)};
 
-  const begin=()=>{stage.classList.add('canvas-ready');started=performance.now();render(started,reduced)};
+  const fallbackSrc='/static/bb-bike-scooter-cutout.png',poster=stage.querySelector('.splash-bike-poster');
+  const watchPoster=isFallback=>{
+    if(!poster)return;
+    let settled=false,decoding=false;
+    const cleanup=()=>{poster.removeEventListener('load',loaded);poster.removeEventListener('error',fail)};
+    const finish=()=>{if(settled)return;settled=true;cleanup()};
+    const fail=()=>{if(settled)return;settled=true;cleanup();if(!poster.isConnected)return;if(isFallback){stage.classList.add('bike-fallback');if(reduced)render(performance.now(),true);return}poster.src=fallbackSrc;watchPoster(true)};
+    const loaded=()=>{if(settled||decoding)return;decoding=true;const decoded=typeof poster.decode==='function'?poster.decode():null;if(decoded?.then)decoded.then(finish,fail);else finish()};
+    poster.addEventListener('load',loaded,{once:true});poster.addEventListener('error',fail,{once:true});
+    if(poster.complete)queueMicrotask(()=>poster.naturalWidth?loaded():fail())};
   let started=performance.now();
-  splashMotionImage=splashMotionImage||new Image();
-  if(!splashMotionImage.src)splashMotionImage.src='/static/bb-bike-scooter-cutout.png';
-  if(splashMotionImage.complete&&splashMotionImage.naturalWidth)begin();
-  else splashMotionImage.addEventListener('load',begin,{once:true})}
+  stage.classList.add('canvas-ready');render(started,reduced);
+  watchPoster(poster?.src.includes('bb-bike-scooter-cutout.png'))}
 
 function markMapReady(){
   // Карта доложила о готовности (или сообщила, что не запустится) —
@@ -1298,7 +1353,7 @@ function runSplash(force=false){
     node.setAttribute('role','status');node.setAttribute('aria-live','polite');
     node.setAttribute('aria-label','Подготавливаем квест');
     node.innerHTML=`<div class="splash-inner" aria-hidden="true">
-    <div class="splash-stage" aria-hidden="true"><img class="splash-bike-poster" src="/static/bb-bike-scooter-cutout.png" alt="" fetchpriority="high" decoding="async"><canvas class="splash-motion" width="512" height="512"></canvas></div>
+    <div class="splash-stage" aria-hidden="true"><canvas class="splash-motion" width="512" height="512"></canvas><div class="splash-bike-wrap"><img class="splash-bike-poster" src="/static/bb-bike-gift-v1.webp" alt="" fetchpriority="high" decoding="async"><i class="splash-headlight"></i></div><i class="splash-horn">БИ-БИ!</i></div>
     <p class="splash-sub">Красная Поляна</p>
     <h1 class="splash-title">Бибибайк Квест</h1>
     <p class="splash-tip" id="splash-tip">${esc(SPLASH_TIPS[0])}</p>

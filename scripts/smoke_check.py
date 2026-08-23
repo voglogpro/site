@@ -184,6 +184,12 @@ async def scenario(order: tuple[int, ...]) -> None:
 
 async def main() -> None:
     root = Path(__file__).resolve().parent.parent
+    gift_asset = root / "static" / "bb-bike-gift-v1.webp"
+    assert gift_asset.is_file()
+    gift_bytes = gift_asset.read_bytes()
+    assert 50_000 < len(gift_bytes) < 300_000
+    assert gift_bytes[:4] == b"RIFF" and gift_bytes[8:12] == b"WEBP"
+    assert production.mimetypes.guess_type(str(gift_asset))[0] == "image/webp"
     leaflet = (root / "static" / "vendor" / "leaflet-1.9.4.asset").read_bytes()
     assert hashlib.sha256(leaflet.rstrip(b"\n")).hexdigest() == "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a"
     invite_video = (root / "static" / production.QUEST_SHARE_VIDEO).read_bytes()
@@ -246,7 +252,11 @@ async def main() -> None:
     assert "function initGlMap(" in webapp and "new mapgl.Map(node,opts)" in webapp
     assert "function startSplashMotion(" in webapp and "requestAnimationFrame(render)" in webapp
     assert "function primeRouteMap(" in webapp and "return rules('',true)" in webapp
-    assert 'rel="preload" href="/static/bb-bike-scooter-cutout.png"' in webapp
+    assert 'rel="preload" href="/static/bb-bike-gift-v1.webp"' in webapp
+    assert "fallbackSrc='/static/bb-bike-scooter-cutout.png'" in webapp
+    assert "renderDensity=Math.min(1.75" in webapp and "ctx.setTransform(renderDensity" in webapp
+    assert "animation:gift-bike-ride 3s linear infinite" in webapp
+    assert 'class="splash-bike-wrap"' in webapp and 'class="splash-headlight"' in webapp
     assert 'class="splash-motion" width="512" height="512"' in webapp
     assert "warmedFingerprint===stateFingerprint(state)?screenCache.get('partners'):null" in webapp
     assert 'id="map-loading-layer"' not in webapp and 'Загружаем карту 2ГИС' not in webapp

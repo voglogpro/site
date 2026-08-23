@@ -22,6 +22,7 @@ import io
 import json
 import logging
 import math
+import mimetypes
 import os
 import qrcode
 import secrets
@@ -56,6 +57,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse
 
+mimetypes.add_type("image/webp", ".webp")
 
 # ========================================================================
 # НАСТРОЙКИ · переменные окружения и конфигурация
@@ -841,6 +843,7 @@ const PRECACHE = [
   '/assets/leaflet-1.9.4.js',
   '/static/vendor/leaflet.css',
   '/static/bb-bike-logo.jpg',
+  '/static/bb-bike-gift-v1.webp',
   '/static/bb-bike-scooter-cutout.png',
 ];
 
@@ -3457,7 +3460,8 @@ def _build_fingerprint() -> str:
     base = Path(__file__).resolve().parent
     digest = hashlib.sha256()
     for name in (
-        "main.py", "index.html", "admin.html", "static/bb-bike-logo.jpg", "static/bb-bike-scooter-cutout.png",
+        "main.py", "index.html", "admin.html", "static/bb-bike-logo.jpg", "static/bb-bike-gift-v1.webp",
+        "static/bb-bike-scooter-cutout.png",
         f"static/{QUEST_SHARE_VIDEO}",
         "static/admin.css", "static/vendor/leaflet.css",
         "static/vendor/leaflet-1.9.4.asset",
