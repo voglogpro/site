@@ -169,6 +169,52 @@ async def production_reward_scenario() -> None:
             cookie = production.create_admin_session(settings, now=1_000)
             assert production.validate_admin_session(cookie, settings, now=1_001)
             assert not production.validate_admin_session(cookie + "x", settings, now=1_001)
+            audiences = await service.broadcast_audiences()
+            assert audiences == {"all": 1, "active": 0, "completed": 1}
+            broadcast, broadcast_created = await service.create_broadcast(
+                0, "Обновление <важное>", "В квесте появилась новая возможность.",
+                "completed", "admin-broadcast-smoke-0001",
+            )
+            assert broadcast_created and broadcast["recipient_count"] == 1
+            duplicate_broadcast, duplicate_created = await service.create_broadcast(
+                0, "Другой текст", "Не должен создать вторую рассылку.",
+                "completed", "admin-broadcast-smoke-0001",
+            )
+            assert not duplicate_created and duplicate_broadcast["id"] == broadcast["id"]
+            class BroadcastBot:
+                sent = []
+                async def send_message(self, user_id, text, reply_markup=None):
+                    self.sent.append((user_id, text, reply_markup))
+                    return type("Sent", (), {"message_id": 901})()
+            broadcast_bot = BroadcastBot()
+            delivered = await production.deliver_admin_broadcast(
+                service, broadcast_bot, settings, broadcast["id"]
+            )
+            assert delivered["status"] == "completed"
+            assert delivered["sent_count"] == 1 and delivered["failed_count"] == 0
+            assert len(broadcast_bot.sent) == 1
+            assert "&lt;важное&gt;" in broadcast_bot.sent[0][1]
+            assert broadcast_bot.sent[0][2].inline_keyboard[0][0].web_app.url == settings.webapp_url
+            failed_broadcast, failed_created = await service.create_broadcast(
+                0, "Проверка ошибки", "Недоступный пользователь попадёт в отчёт.",
+                "all", "admin-broadcast-smoke-failed",
+            )
+            assert failed_created
+            class FailedBroadcastBot:
+                async def send_message(self, *_args, **_kwargs):
+                    raise RuntimeError("blocked in smoke")
+            failed_delivery = await production.deliver_admin_broadcast(
+                service, FailedBroadcastBot(), settings, failed_broadcast["id"]
+            )
+            assert failed_delivery["status"] == "completed"
+            assert failed_delivery["sent_count"] == 0 and failed_delivery["failed_count"] == 1
+            # Созданная, но не запущенная рассылка после рестарта должна быть
+            # явно прервана, а не отправлена повторно вслепую.
+            interrupted, interrupted_created = await service.create_broadcast(
+                0, "Проверка рестарта", "Это сообщение не должно уйти автоматически.",
+                "all", "admin-broadcast-smoke-0002",
+            )
+            assert interrupted_created and interrupted["status"] == "queued"
             # Имитируем завершённые точки старой версии: initialize должен
             # восстановить бонус и один раз заменить старые случайные коды.
             async with db.transaction() as tx:
@@ -194,7 +240,10 @@ async def production_reward_scenario() -> None:
             ))["total"] == 300
             assert (await db.fetchone(
                 "SELECT value FROM schema_meta WHERE key='version'"
-            ))["value"] == "4"
+            ))["value"] == "5"
+            assert (await db.fetchone(
+                "SELECT status FROM admin_broadcasts WHERE id=?", (interrupted["id"],)
+            ))["status"] == "interrupted"
             migrated = await db.fetchall(
                 """SELECT seq,reward_code,reward_redeemed_at,reward_redeem_request_id
                    FROM session_points WHERE session_id=? ORDER BY seq""",
@@ -362,6 +411,8 @@ async def main() -> None:
     assert "copyPremiumRequest" in admin_app and "copySupportConversation" in admin_app
     assert "Копировать заявку" in admin_app and "Копировать всё обращение" in admin_app
     assert "Telegram ID:" in admin_app and "ID участника:" in admin_app
+    assert "/api/admin/broadcasts" in admin_app and "Подтвердить рассылку" in admin_app
+    assert "История рассылок" in admin_app and "pendingBroadcastRequestId" in admin_app
     assert "function useMapgl(){return !!mapglKey()&&!!window.mapgl&&!window.__mapglFailed}" in webapp
     assert "function initGlMap(" in webapp and "new mapgl.Map(node,opts)" in webapp
     assert "function startSplashMotion(" in webapp and "requestAnimationFrame(render)" in webapp
@@ -404,5 +455,5 @@ async def main() -> None:
     assert validate_admin_ticket(ticket, settings, now=1_000 + settings.admin_ticket_ttl_sec + 1) is None
     for order in itertools.permutations(range(3)): await scenario(order)
     await production_reward_scenario()
-    print("PASS: persistence, maps, 6 point orders, QR and 100-point bonus idempotency, password session, one-time rewards, 30-day subscription + 300 bonuses, CRM support and native video sharing")
+    print("PASS: persistence, maps, 6 point orders, QR and 100-point bonus idempotency, password session, one-time rewards, 30-day subscription + 300 bonuses, CRM support, broadcast delivery and native video sharing")
 if __name__ == "__main__": asyncio.run(main())

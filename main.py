@@ -529,6 +529,38 @@ CREATE TABLE IF NOT EXISTS admin_grants (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS admin_broadcasts (
+    id TEXT PRIMARY KEY,
+    admin_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    audience TEXT NOT NULL CHECK(audience IN ('all','active','completed')),
+    status TEXT NOT NULL DEFAULT 'queued'
+        CHECK(status IN ('queued','sending','completed','failed','interrupted')),
+    request_id TEXT NOT NULL UNIQUE,
+    recipient_count INTEGER NOT NULL DEFAULT 0,
+    sent_count INTEGER NOT NULL DEFAULT 0,
+    failed_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    completed_at TEXT,
+    error_text TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS admin_broadcast_deliveries (
+    broadcast_id TEXT NOT NULL REFERENCES admin_broadcasts(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES participants(user_id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','sent','failed')),
+    telegram_message_id INTEGER,
+    error_text TEXT NOT NULL DEFAULT '',
+    sent_at TEXT,
+    PRIMARY KEY(broadcast_id,user_id)
+);
+CREATE INDEX IF NOT EXISTS admin_broadcasts_created
+    ON admin_broadcasts(created_at DESC);
+CREATE INDEX IF NOT EXISTS admin_broadcast_deliveries_pending
+    ON admin_broadcast_deliveries(broadcast_id,status);
+
 CREATE TABLE IF NOT EXISTS point_qr_codes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     point_id INTEGER NOT NULL REFERENCES points(id) ON DELETE CASCADE,
@@ -659,8 +691,18 @@ class Database:
             "CREATE UNIQUE INDEX IF NOT EXISTS premium_request_id_unique "
             "ON premium_entitlements(request_id) WHERE request_id IS NOT NULL"
         )
+        # Незавершённую отправку после перезапуска не продолжаем автоматически:
+        # иначе Telegram мог принять сообщение, а процесс — не успеть сохранить
+        # результат, что привело бы к дублю. Администратор увидит её в истории.
         await self._db.execute(
-            "INSERT INTO schema_meta(key,value) VALUES('version','4') ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+            """UPDATE admin_broadcasts
+               SET status='interrupted',completed_at=?,
+                   error_text='Рассылка прервана перезапуском сервиса. Проверь результат перед повтором.'
+               WHERE status IN ('queued','sending')""",
+            (now,),
+        )
+        await self._db.execute(
+            "INSERT INTO schema_meta(key,value) VALUES('version','5') ON CONFLICT(key) DO UPDATE SET value=excluded.value"
         )
         await self._db.execute(
             """UPDATE campaigns SET premium_title='Подписка 30 дней + 300 Бибибонусов'
@@ -1971,6 +2013,177 @@ class QuestService:
                     (session_id, claim),
                 )
 
+    async def broadcast_audiences(self) -> dict[str, int]:
+        row = await self.db.fetchone(
+            """SELECT
+                 COALESCE(SUM(p.privacy_accepted_at IS NOT NULL),0) AS all_count,
+                 COALESCE(SUM(p.privacy_accepted_at IS NOT NULL AND EXISTS(
+                     SELECT 1 FROM sessions s WHERE s.user_id=p.user_id
+                       AND s.status IN ('awaiting_location','active')
+                 )),0) AS active_count,
+                 COALESCE(SUM(p.privacy_accepted_at IS NOT NULL AND EXISTS(
+                     SELECT 1 FROM sessions s WHERE s.user_id=p.user_id
+                       AND s.status='completed'
+                 )),0) AS completed_count
+               FROM participants p"""
+        )
+        data = row_dict(row) or {}
+        return {
+            "all": int(data.get("all_count") or 0),
+            "active": int(data.get("active_count") or 0),
+            "completed": int(data.get("completed_count") or 0),
+        }
+
+    async def list_broadcasts(self, limit: int = 20) -> list[dict]:
+        rows = await self.db.fetchall(
+            """SELECT id,title,body,audience,status,recipient_count,sent_count,
+                      failed_count,created_at,started_at,completed_at,error_text
+               FROM admin_broadcasts ORDER BY created_at DESC LIMIT ?""",
+            (max(1, min(int(limit), 100)),),
+        )
+        return [row_dict(row) for row in rows]
+
+    async def create_broadcast(
+        self, admin_id: int, title: str, body: str, audience: str, request_id: str
+    ) -> tuple[dict, bool]:
+        title = re.sub(r"[\x00-\x1f]", " ", str(title or "")).strip()[:120]
+        body = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", str(body or "")).strip()[:3500]
+        audience = str(audience or "").strip().lower()
+        request_id = str(request_id or "").strip()
+        if len(title) < 2:
+            raise QuestError("broadcast_title_required", "Напиши заголовок уведомления.", 400)
+        if len(body) < 2:
+            raise QuestError("broadcast_body_required", "Напиши текст уведомления.", 400)
+        if audience not in {"all", "active", "completed"}:
+            raise QuestError("broadcast_audience_invalid", "Выбери получателей уведомления.", 400)
+        if not (16 <= len(request_id) <= 100) or not re.fullmatch(r"[A-Za-z0-9._:-]+", request_id):
+            raise QuestError("bad_request_id", "Не удалось безопасно создать рассылку. Попробуй ещё раз.", 400)
+
+        audience_sql = {
+            "all": "p.privacy_accepted_at IS NOT NULL",
+            "active": """p.privacy_accepted_at IS NOT NULL AND EXISTS(
+                SELECT 1 FROM sessions s WHERE s.user_id=p.user_id
+                  AND s.status IN ('awaiting_location','active'))""",
+            "completed": """p.privacy_accepted_at IS NOT NULL AND EXISTS(
+                SELECT 1 FROM sessions s WHERE s.user_id=p.user_id
+                  AND s.status='completed')""",
+        }[audience]
+        broadcast_id = f"broadcast-{uuid.uuid4()}"
+        created_at = iso()
+        async with self.db.transaction() as db:
+            existing = await (await db.execute(
+                "SELECT * FROM admin_broadcasts WHERE request_id=?", (request_id,)
+            )).fetchone()
+            if existing:
+                return row_dict(existing), False
+            await db.execute(
+                """INSERT INTO admin_broadcasts(
+                       id,admin_id,title,body,audience,status,request_id,created_at
+                   ) VALUES(?,?,?,?,?,'queued',?,?)""",
+                (broadcast_id, admin_id, title, body, audience, request_id, created_at),
+            )
+            await db.execute(
+                f"""INSERT INTO admin_broadcast_deliveries(broadcast_id,user_id)
+                    SELECT ?,p.user_id FROM participants p WHERE {audience_sql}""",
+                (broadcast_id,),
+            )
+            count_row = await (await db.execute(
+                "SELECT COUNT(*) count FROM admin_broadcast_deliveries WHERE broadcast_id=?",
+                (broadcast_id,),
+            )).fetchone()
+            recipient_count = int(count_row["count"] or 0)
+            await db.execute(
+                "UPDATE admin_broadcasts SET recipient_count=? WHERE id=?",
+                (recipient_count, broadcast_id),
+            )
+            await db.execute(
+                """INSERT INTO admin_audit(
+                       admin_id,action,entity_type,entity_id,before_json,after_json,created_at
+                   ) VALUES(?,?,?,?,?,?,?)""",
+                (
+                    admin_id, "broadcast.create", "broadcast", broadcast_id, None,
+                    json.dumps({
+                        "title": title, "body": body, "audience": audience,
+                        "recipient_count": recipient_count,
+                    }, ensure_ascii=False),
+                    created_at,
+                ),
+            )
+            created = await (await db.execute(
+                "SELECT * FROM admin_broadcasts WHERE id=?", (broadcast_id,)
+            )).fetchone()
+        return row_dict(created), True
+
+    async def claim_broadcast(self, broadcast_id: str) -> dict | None:
+        async with self.db.transaction() as db:
+            cursor = await db.execute(
+                """UPDATE admin_broadcasts SET status='sending',started_at=?
+                   WHERE id=? AND status='queued'""",
+                (iso(), broadcast_id),
+            )
+            if cursor.rowcount != 1:
+                return None
+            row = await (await db.execute(
+                "SELECT * FROM admin_broadcasts WHERE id=?", (broadcast_id,)
+            )).fetchone()
+        return row_dict(row)
+
+    async def pending_broadcast_recipients(self, broadcast_id: str) -> list[int]:
+        rows = await self.db.fetchall(
+            """SELECT user_id FROM admin_broadcast_deliveries
+               WHERE broadcast_id=? AND status='pending' ORDER BY user_id""",
+            (broadcast_id,),
+        )
+        return [int(row["user_id"]) for row in rows]
+
+    async def record_broadcast_delivery(
+        self, broadcast_id: str, user_id: int, sent: bool,
+        telegram_message_id: int | None = None, error_text: str = "",
+    ) -> None:
+        status = "sent" if sent else "failed"
+        async with self.db.transaction() as db:
+            await db.execute(
+                """UPDATE admin_broadcast_deliveries
+                   SET status=?,telegram_message_id=?,error_text=?,sent_at=?
+                   WHERE broadcast_id=? AND user_id=? AND status='pending'""",
+                (
+                    status, telegram_message_id, str(error_text or "")[:300], iso(),
+                    broadcast_id, user_id,
+                ),
+            )
+            await db.execute(
+                """UPDATE admin_broadcasts SET
+                       sent_count=(SELECT COUNT(*) FROM admin_broadcast_deliveries
+                                   WHERE broadcast_id=? AND status='sent'),
+                       failed_count=(SELECT COUNT(*) FROM admin_broadcast_deliveries
+                                     WHERE broadcast_id=? AND status='failed')
+                   WHERE id=?""",
+                (broadcast_id, broadcast_id, broadcast_id),
+            )
+
+    async def finish_broadcast(self, broadcast_id: str, fatal_error: str = "") -> dict | None:
+        async with self.db.transaction() as db:
+            counts = await (await db.execute(
+                """SELECT COALESCE(SUM(status='sent'),0) sent,
+                          COALESCE(SUM(status='failed'),0) failed
+                   FROM admin_broadcast_deliveries WHERE broadcast_id=?""",
+                (broadcast_id,),
+            )).fetchone()
+            status = "failed" if fatal_error else "completed"
+            await db.execute(
+                """UPDATE admin_broadcasts
+                   SET status=?,sent_count=?,failed_count=?,completed_at=?,error_text=?
+                   WHERE id=? AND status='sending'""",
+                (
+                    status, int(counts["sent"] or 0), int(counts["failed"] or 0),
+                    iso(), str(fatal_error or "")[:500], broadcast_id,
+                ),
+            )
+            row = await (await db.execute(
+                "SELECT * FROM admin_broadcasts WHERE id=?", (broadcast_id,)
+            )).fetchone()
+        return row_dict(row)
+
     async def admin_overview(self) -> dict:
         campaign = row_dict(await self._campaign())
         points = [row_dict(r) for r in await self.db.fetchall("SELECT * FROM points ORDER BY seq")]
@@ -2043,10 +2256,13 @@ class QuestService:
                FROM point_qr_codes q JOIN points p ON p.id=q.point_id ORDER BY p.seq,q.id"""
         )]
         support_conversations = await self.admin_support_conversations()
+        broadcast_audiences = await self.broadcast_audiences()
+        broadcasts = await self.list_broadcasts()
         return {
             "campaign": campaign, "points": points, "metrics": metrics, "funnel": funnel,
             "recent": recent, "premium_requests": premium_requests, "qr_codes": qr_codes,
             "support_metrics": support_metrics, "support_conversations": support_conversations,
+            "broadcast_audiences": broadcast_audiences, "broadcasts": broadcasts,
             "map": {"attribution": self.settings.map_attribution, "mapgl_key": mapgl_key_for(self.settings), "mapgl_style": self.settings.mapgl_style, "mapgl_styles": {"light": self.settings.mapgl_style_light, "dark": self.settings.mapgl_style_dark}, # Подложка для карты в CRM. В приложении карту рисует 2ГИС, а панели
                     # нужен обычный источник тайлов: раньше адрес брался из
                     # удалённой настройки, и карта точек переставала грузиться.
@@ -2922,6 +3138,70 @@ def _csv_safe(value) -> str:
     return text
 
 
+async def deliver_admin_broadcast(
+    service: QuestService, bot: Bot, settings: Settings, broadcast_id: str
+) -> dict | None:
+    """Deliver one snapshotted CRM broadcast without duplicating recipients."""
+    broadcast = await service.claim_broadcast(broadcast_id)
+    if not broadcast:
+        return None
+    try:
+        recipients = await service.pending_broadcast_recipients(broadcast_id)
+        message_text = (
+            f"<b>{html.escape(broadcast['title'])}</b>\n\n"
+            f"{html.escape(broadcast['body'])}"
+        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(
+                text="Открыть квест", web_app=WebAppInfo(url=settings.webapp_url)
+            )
+        ]])
+        for user_id in recipients:
+            delivered = False
+            error_text = ""
+            telegram_message_id = None
+            for attempt in range(2):
+                try:
+                    sent = await bot.send_message(
+                        user_id, message_text, reply_markup=keyboard
+                    )
+                    telegram_message_id = getattr(sent, "message_id", None)
+                    delivered = True
+                    break
+                except TelegramRetryAfter as exc:
+                    error_text = f"Telegram flood control: {exc.retry_after} sec"
+                    if attempt == 0 and 0 < exc.retry_after <= 120:
+                        await asyncio.sleep(float(exc.retry_after) + 0.25)
+                        continue
+                    break
+                except (TelegramForbiddenError, TelegramBadRequest) as exc:
+                    error_text = f"{type(exc).__name__}: {exc}"
+                    break
+                except (TelegramNetworkError, TelegramServerError) as exc:
+                    error_text = f"{type(exc).__name__}: {exc}"
+                    if attempt == 0:
+                        await asyncio.sleep(1.0)
+                        continue
+                    break
+                except Exception as exc:
+                    error_text = f"{type(exc).__name__}: {exc}"
+                    break
+            await service.record_broadcast_delivery(
+                broadcast_id, user_id, delivered, telegram_message_id, error_text
+            )
+            # Запас относительно общего лимита Telegram: рассылка не мешает
+            # ответам поддержки и служебным уведомлениям этого же бота.
+            await asyncio.sleep(0.08)
+        return await service.finish_broadcast(broadcast_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        log.exception("Рассылка %s завершилась аварийно", broadcast_id)
+        return await service.finish_broadcast(
+            broadcast_id, f"{type(exc).__name__}: {exc}"
+        )
+
+
 def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_version: str) -> web.Application:
     # main.py лежит в корне проекта, поэтому static и index.html — рядом с ним.
     # (В разбитой на модули версии файл был в quest/, отсюда лишний .parent.)
@@ -2929,6 +3209,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
     static = root / "static"
     limiter = RateLimiter()
     bot_username_cache = ""
+    broadcast_tasks: set[asyncio.Task] = set()
 
     async def notify_admins_about_participant(
         identity: TelegramIdentity, data: dict
@@ -3479,6 +3760,35 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         require_admin(request, settings)
         return json_response({"data": await service.admin_overview()})
 
+    async def admin_broadcast(request):
+        admin = require_admin(request, settings)
+        if not limiter.allow(f"admin-broadcast:{admin.user_id}", 4, 60):
+            raise QuestError(
+                "broadcast_rate_limited",
+                "Слишком много рассылок подряд. Проверь историю и подожди минуту.",
+                429,
+            )
+        body = await json_body(request, max_keys=4)
+        broadcast, created = await service.create_broadcast(
+            admin.user_id,
+            str(body.get("title") or ""),
+            str(body.get("body") or ""),
+            str(body.get("audience") or ""),
+            str(body.get("request_id") or ""),
+        )
+        if created:
+            task = asyncio.create_task(
+                deliver_admin_broadcast(service, bot, settings, broadcast["id"]),
+                name=f"admin-broadcast-{broadcast['id']}",
+            )
+            broadcast_tasks.add(task)
+            task.add_done_callback(broadcast_tasks.discard)
+        return json_response({
+            "data": await service.admin_overview(),
+            "broadcast": broadcast,
+            "created": created,
+        }, 202 if created else 200)
+
     async def admin_support_detail(request):
         require_admin(request, settings)
         return json_response({
@@ -3710,6 +4020,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
     app.router.add_post("/api/admin/login", admin_login)
     app.router.add_post("/api/admin/logout", admin_logout)
     app.router.add_get("/api/admin/overview", admin_overview)
+    app.router.add_post("/api/admin/broadcasts", admin_broadcast)
     app.router.add_get("/api/admin/support/{conversation_id}", admin_support_detail)
     app.router.add_post("/api/admin/support/{conversation_id}/reply", admin_support_reply)
     app.router.add_post("/api/admin/support/{conversation_id}/status", admin_support_status)
@@ -3734,6 +4045,10 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
     app.on_startup.append(load_admins)
 
     async def close_session(_):
+        for task in tuple(broadcast_tasks):
+            task.cancel()
+        if broadcast_tasks:
+            await asyncio.gather(*tuple(broadcast_tasks), return_exceptions=True)
         if http_session:
             await http_session[0].close()
 
