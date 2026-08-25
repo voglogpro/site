@@ -1819,7 +1819,10 @@ function startParam(){
     ||new URLSearchParams(location.search).get('startapp')
     ||new URLSearchParams(location.search).get('tgWebAppStartParam')||'';
   const code=questCodeFrom(raw);
-  return /^bbq-/i.test(code)?code:''}
+  /* Первые напечатанные QR были обычными token_urlsafe без префикса bbq-.
+     Сервер по-прежнему знает их хеши, поэтому не отбрасываем их в браузере.
+     Служебные параметры открытия приложения QR-кодами не являются. */
+  return code&&code.length<=256&&!['quest','support'].includes(code.toLowerCase())?code:''}
 
 // Код с таблички ждёт своей очереди, пока человек не примет правила квеста.
 let pendingScan=startParam();
@@ -1839,12 +1842,10 @@ async function applyPendingScan(){
     const ev=state.event||{};
     if(completed()>before){
       tg?.HapticFeedback?.notificationOccurred?.('success');
-      // Сначала печать штампа, дальше человек попадает к партнёру.
-      stampSuccess(ev.point_completed);
       finishSplashWithoutMap();
-      setTimeout(()=>partnerScreen(ev.point_completed,true),1600);
+      await claimStagePromo(ev.point_completed);
       return true}
-    if(ev.already_completed){toast('Эта точка уже отмечена');partnerScreen(ev.already_completed);finishSplashWithoutMap();return true}
+    if(ev.already_completed){toast('Эта точка уже отмечена');finishSplashWithoutMap();showReward(ev.already_completed);return true}
   }catch(x){if(!offlineMode&&!['geo_required','too_far'].includes(x.code))pendingScan='';toast(x.message)}
   return false}
 

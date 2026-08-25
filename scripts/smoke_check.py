@@ -1,6 +1,7 @@
 """Release smoke: v2 migration, any-order QR, analytics and one premium."""
 from __future__ import annotations
 import asyncio, hashlib, itertools, os, sys, tempfile
+from dataclasses import replace
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.setdefault("DEV_MODE", "1")
@@ -52,12 +53,22 @@ async def production_reward_scenario() -> None:
                     "partner_hours": "09:00–21:00", "description": "Тестовая точка", "photo_url": "",
                 })
                 codes.append(await service.rotate_qr(0, point["id"]))
+            external_payload = "bbq-v2-recovery-link-ABC123"
+            external_url = f"https://t.me/quest_bot?startapp={external_payload}"
+            await service.link_external_qr(
+                0, overview["points"][1]["id"], external_url, "Recovery URL",
+            )
             await service.admin_update_campaign(0, {"status": "active", "session_duration_min": 240})
             started, created = await service.start_with_status(identity, True)
             assert created is True and started["session"]["status"] == "active"
             resumed, created_again = await service.start_with_status(identity, True)
             assert created_again is False and resumed["session"]["id"] == started["session"]["id"]
-            state = await service.scan(identity, codes[0], "production-scan")
+            # Даже если QR_SECRET случайно заменили, уже напечатанная табличка
+            # остаётся рабочей через сохранённый шестисимвольный backup-код.
+            changed_secret_service = production.QuestService(
+                db, replace(settings, qr_secret="changed-secret-still-at-least-32-characters")
+            )
+            state = await changed_secret_service.scan(identity, codes[0], "production-scan")
             reward = state["points"][0]
             assert state["bonus"] == {
                 "per_point": 100, "earned": 100, "maximum": 300,
@@ -84,7 +95,9 @@ async def production_reward_scenario() -> None:
                 assert exc.code == "reward_used"
             else:
                 raise AssertionError("reward was issued twice")
-            second_state = await service.scan(identity, codes[1], "production-scan-2")
+            # CRM привязала полный Telegram URL; пользовательский сканер
+            # присылает такую же ссылку, обе стороны нормализуют startapp.
+            second_state = await service.scan(identity, external_url, "production-scan-2")
             assert second_state["bonus"]["earned"] == 200
             second_reward = await service.redeem_reward(identity, 2, "reward-smoke-request-0003")
             assert second_reward["reward"]["code"] == "TEST-100"

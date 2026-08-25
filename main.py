@@ -1524,7 +1524,14 @@ class QuestService:
                         (session["id"],),
                     )).fetchall()
                     for candidate in candidates:
-                        manual_ok = len(qr_code) == 6 and hmac.compare_digest(qr_code.upper(), candidate["manual_code"].upper())
+                        # Шесть символов напечатаны рядом с QR как резервный
+                        # код. Сравниваем также суффикс полного payload: это
+                        # сохраняет уже напечатанные таблички после случайной
+                        # смены QR_SECRET, не ослабляя ручной сценарий — те же
+                        # шесть символов и так можно было ввести отдельно.
+                        manual_ok = len(qr_code) >= 6 and hmac.compare_digest(
+                            qr_code[-6:].upper(), candidate["manual_code"].upper()
+                        )
                         if hmac.compare_digest(digest, candidate["code_hash"]) or manual_ok:
                             current = candidate
                             break
@@ -1548,7 +1555,7 @@ class QuestService:
                         # чем «код соседней точки», и подсказка должна отличаться.
                         known = await (await db.execute(
                             "SELECT id FROM point_qr_codes WHERE code_hash=? OR upper(manual_code)=?",
-                            (digest, qr_code.upper()),
+                            (digest, qr_code[-6:].upper()),
                         )).fetchone()
                         unknown_code = known is None
                     reason = "" if accepted else ("unknown_code" if unknown_code else "wrong_point")
@@ -2272,7 +2279,11 @@ class QuestService:
         Поэтому напечатанную табличку партнёра можно использовать как есть,
         ничего не переклеивая.
         """
-        raw_code = (raw_code or "").strip()
+        # CRM-сканер обычно получает полную Telegram-ссылку, тогда как
+        # пользовательское приложение перед проверкой достаёт из неё
+        # startapp. Нормализуем одинаково, иначе только что привязанный URL
+        # никогда не совпадёт при пользовательском сканировании.
+        raw_code = extract_quest_code(raw_code)
         if not raw_code or len(raw_code) > 256:
             raise QuestError("invalid_qr", "Код пустой или слишком длинный.", 400)
         label = label.strip()[:80] or "Партнёрский QR"
@@ -3063,7 +3074,20 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         return web.FileResponse(static / "privacy.html", headers={"Cache-Control": "public, max-age=300"})
 
     async def health(_):
-        campaign = await service.db.fetchone("SELECT status FROM campaigns LIMIT 1")
+        campaign = await service.db.fetchone("SELECT id,status,created_at FROM campaigns LIMIT 1")
+        counts = {
+            "participants": (await service.db.fetchone("SELECT COUNT(*) count FROM participants"))["count"],
+            "sessions": (await service.db.fetchone("SELECT COUNT(*) count FROM sessions"))["count"],
+            "qr_codes": (await service.db.fetchone("SELECT COUNT(*) count FROM point_qr_codes"))["count"],
+        }
+        schema = await service.db.fetchone("SELECT value FROM schema_meta WHERE key='version'")
+        try:
+            db_size = settings.db_path.stat().st_size
+        except OSError:
+            db_size = 0
+        db_instance = hashlib.sha256(
+            f"{settings.db_path.resolve()}:{campaign['id'] if campaign else 0}:{campaign['created_at'] if campaign else ''}".encode()
+        ).hexdigest()[:12]
         # Диагностика карты: сразу видно, включена ли перекраска, доступна ли
         # библиотека и сколько квадратов уже лежит в кэше.
         try:
@@ -3072,6 +3096,9 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         except Exception:
             imaging = False
         return json_response({"service": "bibibike-quest", "build_version": build_version, "database": True,
+                              "database_info": {"path": str(settings.db_path), "size_bytes": db_size,
+                                                "schema_version": schema["value"] if schema else "0",
+                                                "instance": db_instance, **counts},
                               "campaign_status": campaign["status"] if campaign else "missing",
                               "map": "2gis"})
 
