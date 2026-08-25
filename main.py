@@ -142,6 +142,23 @@ BIBIBONUS_PER_POINT = 100
 QUEST_POINT_COUNT = 3
 QUEST_TOTAL_BIBIBONUS = BIBIBONUS_PER_POINT * QUEST_POINT_COUNT
 
+# Один публичный промокод закреплён за каждой физической точкой. Код никогда не
+# входит в обычный state мини-приложения: сервер отдаёт его только участнику,
+# который подтвердил уникальный QR этой точки. Внешнее приложение Бибибайк
+# дополнительно должно разрешать активацию каждого кода один раз на аккаунт.
+QUEST_PROMO_CODES: dict[int, str] = {
+    seq: os.getenv(f"QUEST_PROMO_POINT_{seq}", "").strip()
+    or (f"DEV-PROMO-{seq}" if _bool("DEV_MODE") else "")
+    for seq in range(1, QUEST_POINT_COUNT + 1)
+}
+
+
+def quest_promo_code(seq: int) -> str:
+    try:
+        return QUEST_PROMO_CODES[seq]
+    except KeyError as exc:
+        raise QuestError("bad_reward", "Награда не найдена.", 404) from exc
+
 QUEST_SHARE_VIDEO = "bbbike-quest-invite.mp4"
 QUEST_SHARE_TEXT = """Бибибайк КВЕСТ 💚
 
@@ -240,6 +257,9 @@ def load_settings() -> Settings:
             missing.append("ADMIN_PASSWORD (минимум 10 символов)")
         if len(qr_secret) < 32:
             missing.append("QR_SECRET (минимум 32 символа)")
+        for seq, promo_code in QUEST_PROMO_CODES.items():
+            if not promo_code:
+                missing.append(f"QUEST_PROMO_POINT_{seq}")
         if missing:
             raise RuntimeError("Не заданы обязательные настройки: " + ", ".join(missing))
     if dev_mode:
@@ -596,6 +616,25 @@ class Database:
             "WHERE completed_at IS NOT NULL AND bonus_amount=0",
             (BIBIBONUS_PER_POINT,),
         )
+        # v4: вместо случайных кодов у каждой точки теперь один промокод
+        # Бибибайк. Миграция выполняется ровно один раз. Уже прошедшие точки
+        # получают новый код и снова могут забрать его, даже если старый
+        # партнёрский код ранее показывался.
+        fixed_promos_migrated = await (await self._db.execute(
+            "SELECT value FROM schema_meta WHERE key='fixed_promo_codes_v1'"
+        )).fetchone()
+        if not fixed_promos_migrated:
+            for seq, promo_code in QUEST_PROMO_CODES.items():
+                await self._db.execute(
+                    """UPDATE session_points
+                       SET reward_code=?,reward_redeemed_at=NULL,reward_redeem_request_id=NULL
+                       WHERE seq=? AND completed_at IS NOT NULL""",
+                    (promo_code, seq),
+                )
+            await self._db.execute(
+                "INSERT INTO schema_meta(key,value) VALUES('fixed_promo_codes_v1',?)",
+                (now,),
+            )
         # Subscription v3: completion unlocks the reward, while an explicit user
         # action creates the support request. Every ALTER is idempotent for
         # already-running SQLite volumes.
@@ -620,7 +659,7 @@ class Database:
             "ON premium_entitlements(request_id) WHERE request_id IS NOT NULL"
         )
         await self._db.execute(
-            "INSERT INTO schema_meta(key,value) VALUES('version','3') ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+            "INSERT INTO schema_meta(key,value) VALUES('version','4') ON CONFLICT(key) DO UPDATE SET value=excluded.value"
         )
         await self._db.execute(
             """UPDATE campaigns SET premium_title='Подписка 30 дней + 300 Бибибонусов'
@@ -1296,8 +1335,7 @@ class QuestService:
             item = row_dict(point)
             item.pop("id", None)
             # Сам промокод не входит в обычное состояние приложения. Он
-            # возвращается только атомарным запросом выдачи и показывается
-            # ровно один раз на устройстве сотруднику заведения.
+            # возвращается только атомарным запросом выдачи после QR.
             item["reward_available"] = bool(
                 point["completed_at"] and point["reward_code"] and not point["reward_redeemed_at"]
             )
@@ -1551,7 +1589,7 @@ class QuestService:
         if not point or point["completed_at"] or not point["qr_seen_at"]:
             return False
         now = iso()
-        reward_code = f"BB-{secrets.token_hex(3).upper()}"
+        reward_code = quest_promo_code(seq)
         await db.execute(
             "UPDATE session_points SET completed_at=?,reward_code=?,bonus_amount=? "
             "WHERE id=? AND completed_at IS NULL",
@@ -1573,11 +1611,12 @@ class QuestService:
         return True
 
     async def redeem_reward(self, identity: TelegramIdentity, seq: int, request_id: str) -> dict:
-        """Одноразово показать промокод уже полученного подарка.
+        """Выдать промокод Бибибайк за уже подтверждённую точку.
 
         Транзакционная блокировка не даёт двум быстрым нажатиям или двум
-        телефонам получить один код дважды. После ответа обычный state больше
-        никогда не содержит секрет, только статус «использован».
+        телефонам зарегистрировать выдачу дважды. Повтор с тем же request_id
+        восстанавливает ответ после сетевого обрыва; другой request_id получает
+        reward_used. Обычный state никогда не содержит сам код.
         """
         if seq not in (1, 2, 3):
             raise QuestError("bad_reward", "Награда не найдена.", 404)
@@ -1599,7 +1638,7 @@ class QuestService:
                     # код, но первый HTTP-ответ оборвался. Возвращаем ровно
                     # тот же результат, чтобы пользователь не потерял подарок.
                     if point["reward_redeem_request_id"] != request_id:
-                        raise QuestError("reward_used", "Этот промокод уже был показан и отмечен как использованный.", 409)
+                        raise QuestError("reward_used", "Этот промокод уже был получен участником.", 409)
                     redeemed_at = point["reward_redeemed_at"]
                 else:
                     redeemed_at = iso()
@@ -1927,6 +1966,8 @@ class QuestService:
     async def admin_overview(self) -> dict:
         campaign = row_dict(await self._campaign())
         points = [row_dict(r) for r in await self.db.fetchall("SELECT * FROM points ORDER BY seq")]
+        for point in points:
+            point["quest_promo_code"] = QUEST_PROMO_CODES.get(int(point["seq"]), "")
         metrics = row_dict(await self.db.fetchone(
             """SELECT COUNT(*) total, SUM(status IN ('awaiting_location','active')) active,
                SUM(status='completed') completed, SUM(status='expired') expired FROM sessions"""
@@ -2923,6 +2964,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
             f"Участник: {html.escape(identity.display_name)}\n"
             f"Telegram: {username} · <code>{identity.user_id}</code>\n"
             f"Точка {completed_seq}: {html.escape(str(point.get('point_name') or 'подтверждена'))}\n"
+            f"Промокод Бибибайк: <code>{html.escape(quest_promo_code(completed_seq))}</code>\n"
             f"Начислено за этап: <b>+{BIBIBONUS_PER_POINT} Бибибонусов</b>\n"
             f"Всего заработано: <b>{bonus_earned} из {QUEST_TOTAL_BIBIBONUS}</b>\n"
             f"Прогресс: {completed_count} из {QUEST_POINT_COUNT}"
@@ -3297,6 +3339,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
                     "<b>Маршрут пройден</b> 💚\n\n"
                     f"За эту точку начислено <b>+{BIBIBONUS_PER_POINT} Бибибонусов</b>. "
                     f"Всего: <b>{bonus_earned} из {QUEST_TOTAL_BIBIBONUS}</b>.\n\n"
+                    "Промокод Бибибайк готов в квесте — скопируй его и введи в приложении.\n\n"
                     "Финальная награда уже в приложении: подписка на 30 дней и 300 Бибибонусов."
                 )
             else:
@@ -3304,7 +3347,8 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
                     f"<b>Точка {completed} подтверждена</b>\n\n"
                     f"Начислено <b>+{BIBIBONUS_PER_POINT} Бибибонусов</b>. "
                     f"Всего: <b>{bonus_earned} из {QUEST_TOTAL_BIBIBONUS}</b>.\n"
-                    f"Подарок сохранён. Пройдено {completed_count} из {QUEST_POINT_COUNT} — "
+                    "Промокод Бибибайк готов в квесте. "
+                    f"Пройдено {completed_count} из {QUEST_POINT_COUNT} — "
                     "следующую точку можно выбрать самому."
                 )
             try:

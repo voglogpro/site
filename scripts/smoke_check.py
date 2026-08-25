@@ -9,6 +9,9 @@ os.environ.setdefault("WEBAPP_URL", "http://127.0.0.1:3000")
 os.environ.setdefault("ADMIN_IDS", "7785586524")
 os.environ.setdefault("QR_SECRET", "development-only-qr-secret-32-chars")
 os.environ.setdefault("ADMIN_PASSWORD", "development-admin-password")
+os.environ.setdefault("QUEST_PROMO_POINT_1", "TEST-DOLINA")
+os.environ.setdefault("QUEST_PROMO_POINT_2", "TEST-100")
+os.environ.setdefault("QUEST_PROMO_POINT_3", "TEST-GREEN")
 from quest.config import load_settings
 from quest.db import Database
 from quest.security import TelegramIdentity, create_admin_ticket, validate_admin_ticket
@@ -33,6 +36,9 @@ async def production_reward_scenario() -> None:
             assert overview["map"]["mapgl_styles"] == {
                 "light": settings.mapgl_style_light, "dark": settings.mapgl_style_dark,
             }
+            assert [point["quest_promo_code"] for point in overview["points"]] == [
+                "TEST-DOLINA", "TEST-100", "TEST-GREEN",
+            ]
             codes = []
             for point in overview["points"]:
                 await service.admin_update_point(0, point["id"], {
@@ -63,7 +69,7 @@ async def production_reward_scenario() -> None:
             assert "reward_code" not in reward and reward["reward_available"] and not reward["reward_used"]
             redeem_id = "reward-smoke-request-0001"
             issued = await service.redeem_reward(identity, 1, redeem_id)
-            assert issued["reward"]["code"].startswith("BB-")
+            assert issued["reward"]["code"] == "TEST-DOLINA"
             used = issued["data"]["points"][0]
             assert "reward_code" not in used and used["reward_used"] and not used["reward_available"]
             recovered = await service.redeem_reward(identity, 1, redeem_id)
@@ -76,6 +82,8 @@ async def production_reward_scenario() -> None:
                 raise AssertionError("reward was issued twice")
             second_state = await service.scan(identity, codes[1], "production-scan-2")
             assert second_state["bonus"]["earned"] == 200
+            second_reward = await service.redeem_reward(identity, 2, "reward-smoke-request-0003")
+            assert second_reward["reward"]["code"] == "TEST-100"
             completed_state = await service.scan(identity, codes[2], "production-scan-3")
             assert completed_state["session"]["status"] == "completed"
             assert completed_state["bonus"]["earned"] == 300
@@ -85,6 +93,8 @@ async def production_reward_scenario() -> None:
                 (completed_state["session"]["id"],),
             ))["total"] == 300
             assert completed_state["premium"]["requested_at"] is None
+            final_reward = await service.redeem_reward(identity, 3, "reward-smoke-request-0004")
+            assert final_reward["reward"]["code"] == "TEST-GREEN"
             premium_id = "premium-smoke-request-0001"
             requested = await service.request_premium(identity, premium_id, "+7 (999) 123-45-67")
             assert requested["data"]["premium"]["requested_at"]
@@ -142,13 +152,21 @@ async def production_reward_scenario() -> None:
             cookie = production.create_admin_session(settings, now=1_000)
             assert production.validate_admin_session(cookie, settings, now=1_001)
             assert not production.validate_admin_session(cookie + "x", settings, now=1_001)
-            # Имитируем старую завершённую точку до миграции v3: initialize
-            # должен восстановить 100 бонусов, не задваивая остальные.
+            # Имитируем завершённые точки старой версии: initialize должен
+            # восстановить бонус и один раз заменить старые случайные коды.
             async with db.transaction() as tx:
                 await tx.execute(
                     "UPDATE session_points SET bonus_amount=0 WHERE session_id=? AND seq=1",
                     (completed_state["session"]["id"],),
                 )
+                await tx.execute(
+                    """UPDATE session_points
+                       SET reward_code='BB-OLD',reward_redeemed_at='2026-01-01T00:00:00+00:00',
+                           reward_redeem_request_id='old-request'
+                       WHERE session_id=?""",
+                    (completed_state["session"]["id"],),
+                )
+                await tx.execute("DELETE FROM schema_meta WHERE key='fixed_promo_codes_v1'")
             production_path = db.path
             await db.close()
             db = production.Database(production_path)
@@ -159,7 +177,32 @@ async def production_reward_scenario() -> None:
             ))["total"] == 300
             assert (await db.fetchone(
                 "SELECT value FROM schema_meta WHERE key='version'"
-            ))["value"] == "3"
+            ))["value"] == "4"
+            migrated = await db.fetchall(
+                """SELECT seq,reward_code,reward_redeemed_at,reward_redeem_request_id
+                   FROM session_points WHERE session_id=? ORDER BY seq""",
+                (completed_state["session"]["id"],),
+            )
+            assert [row["reward_code"] for row in migrated] == [
+                "TEST-DOLINA", "TEST-100", "TEST-GREEN",
+            ]
+            assert all(not row["reward_redeemed_at"] and not row["reward_redeem_request_id"] for row in migrated)
+            # Маркер делает миграцию одноразовой: дальнейшие перезапуски не
+            # сбросят уже зарегистрированную выдачу.
+            async with db.transaction() as tx:
+                await tx.execute(
+                    """UPDATE session_points SET reward_redeemed_at='2026-01-02T00:00:00+00:00',
+                       reward_redeem_request_id='kept-request' WHERE session_id=? AND seq=1""",
+                    (completed_state["session"]["id"],),
+                )
+            await db.close()
+            db = production.Database(production_path)
+            await db.initialize()
+            kept = await db.fetchone(
+                "SELECT reward_redeemed_at,reward_redeem_request_id FROM session_points WHERE session_id=? AND seq=1",
+                (completed_state["session"]["id"],),
+            )
+            assert kept["reward_redeemed_at"] and kept["reward_redeem_request_id"] == "kept-request"
         finally:
             await db.close()
 
