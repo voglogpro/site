@@ -49,6 +49,17 @@ async def production_reward_scenario() -> None:
             assert created_again is False and resumed["session"]["id"] == started["session"]["id"]
             state = await service.scan(identity, codes[0], "production-scan")
             reward = state["points"][0]
+            assert state["bonus"] == {
+                "per_point": 100, "earned": 100, "maximum": 300,
+                "remaining": 200, "credited": False,
+            }
+            assert reward["bonus_amount"] == 100
+            same_request = await service.scan(identity, codes[0], "production-scan")
+            assert same_request["bonus"]["earned"] == 100
+            fresh_repeat = await service.scan(identity, codes[0], "production-scan-repeat")
+            assert fresh_repeat["bonus"]["earned"] == 100
+            assert fresh_repeat["event"]["already_completed"] == 1
+            assert fresh_repeat["event"]["bonus_awarded"] == 0
             assert "reward_code" not in reward and reward["reward_available"] and not reward["reward_used"]
             redeem_id = "reward-smoke-request-0001"
             issued = await service.redeem_reward(identity, 1, redeem_id)
@@ -63,9 +74,16 @@ async def production_reward_scenario() -> None:
                 assert exc.code == "reward_used"
             else:
                 raise AssertionError("reward was issued twice")
-            await service.scan(identity, codes[1], "production-scan-2")
+            second_state = await service.scan(identity, codes[1], "production-scan-2")
+            assert second_state["bonus"]["earned"] == 200
             completed_state = await service.scan(identity, codes[2], "production-scan-3")
             assert completed_state["session"]["status"] == "completed"
+            assert completed_state["bonus"]["earned"] == 300
+            assert completed_state["event"]["bonus_awarded"] == 100
+            assert (await db.fetchone(
+                "SELECT SUM(bonus_amount) total FROM session_points WHERE session_id=?",
+                (completed_state["session"]["id"],),
+            ))["total"] == 300
             assert completed_state["premium"]["requested_at"] is None
             premium_id = "premium-smoke-request-0001"
             requested = await service.request_premium(identity, premium_id, "+7 (999) 123-45-67")
@@ -82,6 +100,10 @@ async def production_reward_scenario() -> None:
             assert (await db.fetchone(
                 "SELECT COUNT(*) count FROM support_messages WHERE kind='premium_request'"
             ))["count"] == 1
+            support_reward = await db.fetchone(
+                "SELECT text FROM support_messages WHERE kind='premium_request'"
+            )
+            assert "300 Бибибонусов" in support_reward["text"]
             await service.activate_support(identity)
             assert await service.receive_support_message(identity, "Не вижу подписку", 501)
             assert await service.receive_support_message(identity, "Не вижу подписку", 501)
@@ -101,7 +123,9 @@ async def production_reward_scenario() -> None:
             assert closed["conversation"]["status"] == "closed"
             overview = await service.admin_overview()
             assert overview["funnel"]["premium_pending"] == 1
+            assert overview["funnel"]["bonuses_earned"] == 300
             row = next(p for p in overview["recent"] if p["id"] == completed_state["session"]["id"])
+            assert row["bonus_points"] == 300
             assert row["premium_requested_at"]
             assert any(p["id"] == completed_state["session"]["id"] for p in overview["premium_requests"])
             issued_premium = await service.mark_premium_issued(0, completed_state["session"]["id"])
@@ -110,11 +134,32 @@ async def production_reward_scenario() -> None:
             assert repeated_issue["newly_issued"] is False
             final_state = await service.state(identity)
             assert final_state["premium"]["status"] == "issued" and final_state["premium"]["issued_at"]
+            assert final_state["bonus"]["earned"] == 300 and final_state["bonus"]["credited"] is True
             final_overview = await service.admin_overview()
             assert not any(p["id"] == completed_state["session"]["id"] for p in final_overview["premium_requests"])
+            exported = await service.export_rows()
+            assert exported[0]["bonus_points"] == 300
             cookie = production.create_admin_session(settings, now=1_000)
             assert production.validate_admin_session(cookie, settings, now=1_001)
             assert not production.validate_admin_session(cookie + "x", settings, now=1_001)
+            # Имитируем старую завершённую точку до миграции v3: initialize
+            # должен восстановить 100 бонусов, не задваивая остальные.
+            async with db.transaction() as tx:
+                await tx.execute(
+                    "UPDATE session_points SET bonus_amount=0 WHERE session_id=? AND seq=1",
+                    (completed_state["session"]["id"],),
+                )
+            production_path = db.path
+            await db.close()
+            db = production.Database(production_path)
+            await db.initialize()
+            assert (await db.fetchone(
+                "SELECT SUM(bonus_amount) total FROM session_points WHERE session_id=?",
+                (completed_state["session"]["id"],),
+            ))["total"] == 300
+            assert (await db.fetchone(
+                "SELECT value FROM schema_meta WHERE key='version'"
+            ))["value"] == "3"
         finally:
             await db.close()
 
@@ -211,6 +256,8 @@ async def main() -> None:
     assert "await send_welcome(message)" in source
     assert "caption=QUEST_SHARE_TEXT" in source and "FSInputFile(" in source
     assert "notify_admins_about_participant(identity, data)" in source
+    assert "notify_admins_about_progress(identity, data, int(completed))" in source
+    assert "BIBIBONUS_PER_POINT = 100" in source and "QUEST_TOTAL_BIBIBONUS" in source
     class SetupBot:
         name = ""
         commands = []
@@ -267,6 +314,7 @@ async def main() -> None:
     assert 'class="splash-motion" width="512" height="512"' in webapp
     assert "screenCache.get('partners')" not in webapp
     assert "async function partnersScreen()" in webapp and "Загружаем партнёров" in webapp
+    assert "+100" in webapp and "300 Бибибонусов" in webapp and "bonus-award" in webapp
     assert 'id="map-loading-layer"' not in webapp and 'Загружаем карту 2ГИС' not in webapp
     assert 'runSplash();loadMapgl(()=>{});return refresh()' in webapp
     assert 'splashTimer=setTimeout(()=>finishSplashAfterMapTimeout(generation),SPLASH_MAX_MS)' in webapp
@@ -296,5 +344,5 @@ async def main() -> None:
     assert validate_admin_ticket(ticket, settings, now=1_000 + settings.admin_ticket_ttl_sec + 1) is None
     for order in itertools.permutations(range(3)): await scenario(order)
     await production_reward_scenario()
-    print("PASS: persistence, maps, 6 point orders, QR idempotency, password session, one-time rewards, 30-day subscription, CRM support and native video sharing")
+    print("PASS: persistence, maps, 6 point orders, QR and 100-point bonus idempotency, password session, one-time rewards, 30-day subscription + 300 bonuses, CRM support and native video sharing")
 if __name__ == "__main__": asyncio.run(main())

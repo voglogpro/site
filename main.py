@@ -138,20 +138,23 @@ DEFAULT_TILE_SOURCES = (
 
 DEFAULT_MAPGL_LIGHT_STYLE = "c080bb6a-8134-4993-93a1-5b4d8c36a59b"
 DEFAULT_MAPGL_DARK_STYLE = "9643e8da-173b-4359-9fee-8a1fe58e68aa"
+BIBIBONUS_PER_POINT = 100
+QUEST_POINT_COUNT = 3
+QUEST_TOTAL_BIBIBONUS = BIBIBONUS_PER_POINT * QUEST_POINT_COUNT
 
 QUEST_SHARE_VIDEO = "bbbike-quest-invite.mp4"
 QUEST_SHARE_TEXT = """Бибибайк КВЕСТ 💚
 
 Добро пожаловать в квест «Бибибайк» 💚
 
-Гуляй по Красной Поляне, отмечайся на локациях, получай подарки от наших партнёров. А за завершённый квест — бесплатная подписка «Бибибайк» на 30 дней для старта на байке.
+Гуляй по Красной Поляне, отмечайся на локациях, получай подарки от наших партнёров. За каждую пройденную точку ты получишь 100 Бибибонусов, а за весь квест — подписку «Бибибайк» на 30 дней и 300 Бибибонусов.
 
 Здесь всё просто:
 1. Выбери любую из трёх точек.
 2. Построй маршрут в Яндекс Картах или 2ГИС.
 3. На месте отсканируй QR через мини-приложение и забери подарок.
 
-Как только отсканировано 3 уникальных QR-кода — квест считается пройденным. А в подарок — Подписка 30 дней «Бибибайк» 🛵
+Как только отсканировано 3 уникальных QR-кода — квест считается пройденным. Финальная награда — Подписка 30 дней «Бибибайк» и 300 Бибибонусов 🛵
 
 Во время поездки следи за дорогой, а телефон используй только после полной остановки."""
 
@@ -167,7 +170,7 @@ def quest_share_result(settings: "Settings", bot_username: str, build_version: s
         mime_type="video/mp4",
         thumbnail_url=f"{base}/static/bb-bike-logo.jpg?v={version}",
         title="Квест «Бибибайк» · Красная Поляна",
-        description="Три точки, подарки партнёров и Подписка 30 дней",
+        description="Три точки, подарки, 300 Бибибонусов и Подписка 30 дней",
         caption=QUEST_SHARE_TEXT,
         parse_mode=None,
         video_width=1072,
@@ -327,8 +330,8 @@ CREATE TABLE IF NOT EXISTS campaigns (
     city TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','active','paused','ended')),
     session_duration_min INTEGER NOT NULL DEFAULT 240 CHECK(session_duration_min BETWEEN 30 AND 1440),
-    premium_title TEXT NOT NULL DEFAULT 'Подписка 30 дней',
-    premium_instruction TEXT NOT NULL DEFAULT 'Нажми «Получить подписку». Команда Бибибайк проверит квест и подключит бесплатную подписку на 30 дней для старта на байке.',
+    premium_title TEXT NOT NULL DEFAULT 'Подписка 30 дней + 300 Бибибонусов',
+    premium_instruction TEXT NOT NULL DEFAULT 'Нажми «Получить награду». Команда Бибибайк проверит квест, подключит бесплатную подписку на 30 дней и начислит 300 Бибибонусов.',
     starts_at TEXT,
     ends_at TEXT,
     created_at TEXT NOT NULL,
@@ -403,6 +406,7 @@ CREATE TABLE IF NOT EXISTS session_points (
     min_distance_m REAL,
     qr_seen_at TEXT,
     completed_at TEXT,
+    bonus_amount INTEGER NOT NULL DEFAULT 0 CHECK(bonus_amount BETWEEN 0 AND 100),
     reward_code TEXT,
     reward_redeemed_at TEXT,
     reward_redeem_request_id TEXT,
@@ -579,6 +583,19 @@ class Database:
             await self._db.execute("ALTER TABLE session_points ADD COLUMN reward_redeem_request_id TEXT")
         except Exception:
             pass
+        try:
+            await self._db.execute(
+                "ALTER TABLE session_points ADD COLUMN bonus_amount INTEGER NOT NULL DEFAULT 0"
+            )
+        except Exception:
+            pass
+        # Уже пройденные уникальные точки тоже получают положенные бонусы.
+        # Повторный запуск безопасен: ненулевые начисления не меняются.
+        await self._db.execute(
+            "UPDATE session_points SET bonus_amount=? "
+            "WHERE completed_at IS NOT NULL AND bonus_amount=0",
+            (BIBIBONUS_PER_POINT,),
+        )
         # Subscription v3: completion unlocks the reward, while an explicit user
         # action creates the support request. Every ALTER is idempotent for
         # already-running SQLite volumes.
@@ -603,16 +620,16 @@ class Database:
             "ON premium_entitlements(request_id) WHERE request_id IS NOT NULL"
         )
         await self._db.execute(
-            "INSERT INTO schema_meta(key,value) VALUES('version','2') ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+            "INSERT INTO schema_meta(key,value) VALUES('version','3') ON CONFLICT(key) DO UPDATE SET value=excluded.value"
         )
         await self._db.execute(
-            """UPDATE campaigns SET premium_title='Подписка 30 дней'
-               WHERE premium_title IN ('Премиум bb.bike на 30 дней','Premium bb.bike на 30 дней','Premium BBBIKE на 30 дней')"""
+            """UPDATE campaigns SET premium_title='Подписка 30 дней + 300 Бибибонусов'
+               WHERE premium_title IN ('Подписка 30 дней','Премиум bb.bike на 30 дней','Premium bb.bike на 30 дней','Premium BBBIKE на 30 дней')"""
         )
         await self._db.execute(
             """UPDATE campaigns
-               SET premium_instruction='Нажми «Получить подписку». Команда Бибибайк проверит квест и подключит бесплатную подписку на 30 дней для старта на байке.'
-               WHERE premium_instruction IN ('Покажи этот экран администратору. Премиум будет оформлен вручную.','Нажми «Получить Premium». Команда BBBIKE проверит квест и подключит подписку на 30 дней.')"""
+               SET premium_instruction='Нажми «Получить награду». Команда Бибибайк проверит квест, подключит бесплатную подписку на 30 дней и начислит 300 Бибибонусов.'
+               WHERE premium_instruction IN ('Нажми «Получить подписку». Команда Бибибайк проверит квест и подключит бесплатную подписку на 30 дней для старта на байке.','Покажи этот экран администратору. Премиум будет оформлен вручную.','Нажми «Получить Premium». Команда BBBIKE проверит квест и подключит подписку на 30 дней.')"""
         )
         await self._db.commit()
         check = await (await self._db.execute("PRAGMA quick_check")).fetchone()
@@ -1265,7 +1282,7 @@ class QuestService:
             )).fetchall()
         else:
             points = await (await db.execute(
-                "SELECT id point_id,seq,name point_name,address,latitude,longitude,radius_m,reward_title,reward_text,partner_hours,photo_url,description,NULL location_seen_at,NULL qr_seen_at,NULL completed_at,NULL reward_code,NULL reward_redeemed_at FROM points WHERE campaign_id=? AND active=1 ORDER BY seq",
+                "SELECT id point_id,seq,name point_name,address,latitude,longitude,radius_m,reward_title,reward_text,partner_hours,photo_url,description,NULL location_seen_at,NULL qr_seen_at,NULL completed_at,0 bonus_amount,NULL reward_code,NULL reward_redeemed_at FROM points WHERE campaign_id=? AND active=1 ORDER BY seq",
                 (campaign["id"],),
             )).fetchall()
         last_age = None
@@ -1273,6 +1290,7 @@ class QuestService:
             last_age = max(0, int((utcnow() - parse_dt(session["last_location_at"])).total_seconds()))
         point_data = []
         route_distance_m = 0.0
+        bonus_earned = 0
         previous_point = None
         for point in points:
             item = row_dict(point)
@@ -1284,6 +1302,8 @@ class QuestService:
                 point["completed_at"] and point["reward_code"] and not point["reward_redeemed_at"]
             )
             item["reward_used"] = bool(point["reward_redeemed_at"])
+            item["bonus_amount"] = int(point["bonus_amount"] or 0)
+            bonus_earned += item["bonus_amount"]
             item.pop("reward_code", None)
             item.pop("reward_redeem_request_id", None)
             # Расстояние теперь вычисляется только на устройстве пользователя.
@@ -1324,6 +1344,13 @@ class QuestService:
             "location_mode": "optional_local_once",
             "scan_requires_geo": self.settings.scan_require_geo,
             "premium": row_dict(entitlement),
+            "bonus": {
+                "per_point": BIBIBONUS_PER_POINT,
+                "earned": bonus_earned,
+                "maximum": QUEST_TOTAL_BIBIBONUS,
+                "remaining": max(0, QUEST_TOTAL_BIBIBONUS - bonus_earned),
+                "credited": bool(entitlement and entitlement["status"] == "issued"),
+            },
             "support_url": self.settings.support_url,
             "map": {
                 "tile_url": self.settings.map_tile_url,
@@ -1413,7 +1440,10 @@ class QuestService:
                 elif anomaly:
                     await db.execute("UPDATE sessions SET integrity_status='warning',integrity_note=? WHERE id=?", (anomaly, session["id"]))
                 result = await self._state_in_tx(db, user_id)
-                result["event"] = {"point_completed": current["seq"] if accepted and completed_now else None}
+                result["event"] = {
+                    "point_completed": current["seq"] if accepted and completed_now else None,
+                    "bonus_awarded": BIBIBONUS_PER_POINT if accepted and completed_now else 0,
+                }
                 return result
 
     async def scan(self, identity: TelegramIdentity, qr_code: str, request_id: str, position: tuple[float, float] | None = None) -> dict:
@@ -1509,7 +1539,11 @@ class QuestService:
                 raise QuestError("wrong_qr", "Это код другой точки. Проверь табличку у стойки.", 409)
             async with self.db.transaction() as db:
                 result = await self._state_in_tx(db, identity.user_id)
-                result["event"] = {"point_completed": completed_seq, "already_completed": already_seq}
+                result["event"] = {
+                    "point_completed": completed_seq,
+                    "already_completed": already_seq,
+                    "bonus_awarded": BIBIBONUS_PER_POINT if completed_seq else 0,
+                }
                 return result
 
     async def _try_complete_in_tx(self, db, session_id: str, seq: int) -> bool:
@@ -1518,7 +1552,11 @@ class QuestService:
             return False
         now = iso()
         reward_code = f"BB-{secrets.token_hex(3).upper()}"
-        await db.execute("UPDATE session_points SET completed_at=?,reward_code=? WHERE id=? AND completed_at IS NULL", (now, reward_code, point["id"]))
+        await db.execute(
+            "UPDATE session_points SET completed_at=?,reward_code=?,bonus_amount=? "
+            "WHERE id=? AND completed_at IS NULL",
+            (now, reward_code, BIBIBONUS_PER_POINT, point["id"]),
+        )
         progress = await (await db.execute(
             "SELECT COALESCE(SUM(completed_at IS NOT NULL),0) completed,COUNT(*) total FROM session_points WHERE session_id=?",
             (session_id,),
@@ -1619,11 +1657,15 @@ class QuestService:
         return conversation_id
 
     async def request_premium(self, identity: TelegramIdentity, request_id: str, phone: str = "") -> dict:
-        """Create one explicit and retry-safe subscription request after completion."""
+        """Create one retry-safe request for the final subscription and bonuses."""
         request_id = (request_id or "").strip()
         phone = normalize_phone(phone)
         if not phone:
-            raise QuestError("bad_phone", "Проверь номер телефона — он нужен, чтобы подключить подписку.", 400)
+            raise QuestError(
+                "bad_phone",
+                "Проверь номер телефона — он нужен для подписки и начисления Бибибонусов.",
+                400,
+            )
         if not (16 <= len(request_id) <= 100) or not re.fullmatch(r"[A-Za-z0-9._:-]+", request_id):
             raise QuestError("bad_request_id", "Не удалось безопасно отправить заявку. Попробуй ещё раз.", 400)
         async with self.lock_for(identity.user_id):
@@ -1670,7 +1712,7 @@ class QuestService:
                        ) VALUES(?,'system','premium_request',?,?,?)""",
                     (
                         conversation_id,
-                        "Заявка на подписку 30 дней. "
+                        "Заявка на финальную награду: подписка 30 дней + 300 Бибибонусов. "
                         f"ID участника: {row['public_code']}. Телефон: "
                         f"{phone or (row['phone'] if 'phone' in row.keys() else '') or 'не указан'}.",
                         f"premium:{row['session_id']}",
@@ -1900,7 +1942,8 @@ class QuestService:
         ))
         reward_metrics = row_dict(await self.db.fetchone(
             """SELECT COUNT(*) rewards_unlocked,
-               COUNT(DISTINCT session_id) rewarded_users
+               COUNT(DISTINCT session_id) rewarded_users,
+               COALESCE(SUM(bonus_amount),0) bonuses_earned
                FROM session_points WHERE completed_at IS NOT NULL"""
         ))
         premium_metrics = row_dict(await self.db.fetchone(
@@ -1921,6 +1964,7 @@ class QuestService:
         recent = [row_dict(r) for r in await self.db.fetchall(
             """SELECT s.id,s.status,s.current_seq,s.started_at,s.completed_at,s.integrity_status,
                (SELECT COUNT(*) FROM session_points sp WHERE sp.session_id=s.id AND sp.completed_at IS NOT NULL) completed_points,
+               (SELECT COALESCE(SUM(sp.bonus_amount),0) FROM session_points sp WHERE sp.session_id=s.id) bonus_points,
                p.user_id,p.display_name,p.username,e.status premium_status,e.public_code premium_code,
                e.requested_at premium_requested_at,e.support_notified_at premium_support_notified_at,
                e.issued_at premium_issued_at,e.phone premium_phone
@@ -1933,6 +1977,7 @@ class QuestService:
         premium_requests = [row_dict(r) for r in await self.db.fetchall(
             """SELECT s.id,s.status,s.completed_at,
                p.user_id,p.display_name,p.username,
+               (SELECT COALESCE(SUM(sp.bonus_amount),0) FROM session_points sp WHERE sp.session_id=s.id) bonus_points,
                e.status premium_status,e.public_code premium_code,
                e.requested_at premium_requested_at,
                e.support_notified_at premium_support_notified_at,
@@ -1964,6 +2009,7 @@ class QuestService:
         row = await self.db.fetchone(
             """SELECT p.user_id,p.display_name,p.username,s.status,s.current_seq,s.started_at,s.completed_at,
                s.last_location_at,s.integrity_status,e.status premium_status,e.public_code premium_code,
+               (SELECT COALESCE(SUM(sp.bonus_amount),0) FROM session_points sp WHERE sp.session_id=s.id) bonus_points,
                e.requested_at premium_requested_at,e.support_notified_at premium_support_notified_at,
                e.issued_at premium_issued_at
                FROM sessions s JOIN participants p ON p.user_id=s.user_id
@@ -2292,9 +2338,9 @@ class QuestService:
                 (session_id,),
             )).fetchone()
             if not row:
-                raise QuestError("premium_not_found", "Заявка на подписку не найдена.", 404)
+                raise QuestError("premium_not_found", "Заявка на финальную награду не найдена.", 404)
             if not row["requested_at"]:
-                raise QuestError("premium_not_requested", "Участник ещё не отправил заявку на подписку.", 409)
+                raise QuestError("premium_not_requested", "Участник ещё не отправил заявку на финальную награду.", 409)
             if row["status"] not in {"pending", "issued"}:
                 raise QuestError("premium_cancelled", "Заявка отменена и не может быть выдана.", 409)
             newly_issued = row["status"] == "pending"
@@ -2310,11 +2356,13 @@ class QuestService:
             return {
                 "user_id": row["user_id"], "display_name": row["display_name"],
                 "public_code": row["public_code"], "newly_issued": newly_issued,
+                "bonus_points": QUEST_TOTAL_BIBIBONUS,
             }
 
     async def export_rows(self):
         return await self.db.fetchall(
             """SELECT p.user_id,p.username,p.display_name,s.started_at,s.completed_at,
+                      (SELECT COALESCE(SUM(sp.bonus_amount),0) FROM session_points sp WHERE sp.session_id=s.id) bonus_points,
                       e.requested_at,e.public_code,e.phone,e.status,e.issued_at
                FROM premium_entitlements e JOIN sessions s ON s.id=e.session_id JOIN participants p ON p.user_id=s.user_id
                ORDER BY s.completed_at DESC"""
@@ -2377,7 +2425,7 @@ async def setup_bot_commands(bot: Bot, settings: Settings) -> None:
     desired_short = "Квест Бибибайк по трём точкам Красной Поляны"
     desired_description = (
         "Выбирай партнёрские точки в любом порядке, строй маршрут, ставь QR-штампы "
-        "и забирай подарки. После трёх точек — Подписка 30 дней."
+        "и забирай подарки. За три точки — Подписка 30 дней и 300 Бибибонусов."
     )
     desired_menu = MenuButtonWebApp(
         text="Открыть квест", web_app=WebAppInfo(url=settings.webapp_url)
@@ -2509,7 +2557,7 @@ def build_router(service: QuestService, settings: Settings) -> Router:
                 "Это одна из трёх партнёрских точек в Красной Поляне. "
                 "Открой приложение — отметка засчитается сама, а подарок партнёра "
                 "сохранится в квесте.\n\n"
-                "Собери все три штампа и получи бесплатную подписку на 30 дней для старта на байке.",
+                "Собери все три штампа и получи подписку на 30 дней и 300 Бибибонусов.",
                 reply_markup=quest_keyboard(settings),
             )
             return
@@ -2725,7 +2773,8 @@ def build_router(service: QuestService, settings: Settings) -> Router:
             f"Прогресс: {progress}/3\n"
             f"Статус: {item['status']}\n"
             f"Проверка: {item['integrity_status']}\n"
-            f"Подписка 30 дней: {item['premium_status'] or 'не назначена'}"
+            f"Бибибонусы: {item.get('bonus_points') or 0}/{QUEST_TOTAL_BIBIBONUS}\n"
+            f"Финальная награда: {item['premium_status'] or 'не назначена'}"
         )
 
     @router.message(F.text, F.chat.type == "private")
@@ -2855,6 +2904,42 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
             except TelegramAPIError as exc:
                 log.warning(
                     "Не удалось уведомить администратора %s о новом участнике %s: %s",
+                    admin_id,
+                    identity.user_id,
+                    exc,
+                )
+
+    async def notify_admins_about_progress(
+        identity: TelegramIdentity, data: dict, completed_seq: int
+    ) -> None:
+        points = data.get("points") or []
+        point = next((item for item in points if item.get("seq") == completed_seq), {})
+        completed_count = sum(bool(item.get("completed_at")) for item in points)
+        bonus_earned = int((data.get("bonus") or {}).get("earned") or 0)
+        username = f"@{html.escape(identity.username)}" if identity.username else "без username"
+        final = completed_count >= QUEST_POINT_COUNT
+        text = (
+            f"<b>{'Квест завершён' if final else 'Новый этап выполнен'}</b> 💚\n\n"
+            f"Участник: {html.escape(identity.display_name)}\n"
+            f"Telegram: {username} · <code>{identity.user_id}</code>\n"
+            f"Точка {completed_seq}: {html.escape(str(point.get('point_name') or 'подтверждена'))}\n"
+            f"Начислено за этап: <b>+{BIBIBONUS_PER_POINT} Бибибонусов</b>\n"
+            f"Всего заработано: <b>{bonus_earned} из {QUEST_TOTAL_BIBIBONUS}</b>\n"
+            f"Прогресс: {completed_count} из {QUEST_POINT_COUNT}"
+        )
+        if final:
+            text += "\n\nФинальная награда открыта: подписка на 30 дней и 300 Бибибонусов."
+        recipients = (set(settings.admin_ids) | set(GRANTED_ADMINS)) - {identity.user_id}
+        for admin_id in sorted(recipients):
+            try:
+                await bot.send_message(
+                    admin_id,
+                    text,
+                    reply_markup=admin_keyboard(settings, admin_id),
+                )
+            except TelegramAPIError as exc:
+                log.warning(
+                    "Не удалось уведомить администратора %s об этапе user=%s: %s",
                     admin_id,
                     identity.user_id,
                     exc,
@@ -3206,14 +3291,30 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         completed = data.get("event", {}).get("point_completed")
         if completed:
             completed_count = len([point for point in data.get("points", []) if point.get("completed_at")])
+            bonus_earned = int((data.get("bonus") or {}).get("earned") or 0)
             if completed_count >= 3:
-                text = "<b>Маршрут пройден</b>\n\nВсе три точки подтверждены. Финальная награда уже в приложении."
+                text = (
+                    "<b>Маршрут пройден</b> 💚\n\n"
+                    f"За эту точку начислено <b>+{BIBIBONUS_PER_POINT} Бибибонусов</b>. "
+                    f"Всего: <b>{bonus_earned} из {QUEST_TOTAL_BIBIBONUS}</b>.\n\n"
+                    "Финальная награда уже в приложении: подписка на 30 дней и 300 Бибибонусов."
+                )
             else:
-                text = f"<b>Точка {completed} подтверждена</b>\n\nПодарок сохранён. Пройдено {completed_count} из 3 — следующую точку можно выбрать самому."
+                text = (
+                    f"<b>Точка {completed} подтверждена</b>\n\n"
+                    f"Начислено <b>+{BIBIBONUS_PER_POINT} Бибибонусов</b>. "
+                    f"Всего: <b>{bonus_earned} из {QUEST_TOTAL_BIBIBONUS}</b>.\n"
+                    f"Подарок сохранён. Пройдено {completed_count} из {QUEST_POINT_COUNT} — "
+                    "следующую точку можно выбрать самому."
+                )
             try:
                 await bot.send_message(identity.user_id, text)
             except Exception as exc:
                 log.warning("Не удалось отправить уведомление user=%s: %s", identity.user_id, type(exc).__name__)
+            asyncio.create_task(
+                notify_admins_about_progress(identity, data, int(completed)),
+                name=f"notify-progress-{identity.user_id}-{completed}",
+            )
         return json_response({"data": data})
 
     async def redeem_reward(request):
@@ -3233,15 +3334,15 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         body = await json_body(request, max_keys=3)
         phone = normalize_phone(str(body.get("phone", "")))
         if not phone:
-            raise QuestError("bad_phone", "Проверь номер телефона — он нужен, чтобы подключить подписку.", 400)
+            raise QuestError("bad_phone", "Проверь номер телефона — он нужен для подписки и начисления Бибибонусов.", 400)
         result = await service.request_premium(identity, str(body.get("request_id", "")), phone)
         participant = result.pop("participant")
         claim = result.pop("notification_claim")
         session_id = result.pop("session_id")
         draft = (
             "Здравствуйте! Я завершил квест Бибибайк в Красной Поляне и хочу получить "
-            f"подписку на 30 дней. ID участника: {participant['public_code']}. "
-            f"Телефон для подписки: {participant.get('phone') or 'не указан'}."
+            f"подписку на 30 дней и 300 Бибибонусов. ID участника: {participant['public_code']}. "
+            f"Телефон для начисления: {participant.get('phone') or 'не указан'}."
         )
         notified = bool(result["data"].get("premium", {}).get("support_notified_at"))
         if claim:
@@ -3250,18 +3351,19 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
                 target = int(settings.support_chat_id)
             username = f"@{participant['username']}" if participant["username"] else "без username"
             message = (
-                "<b>Новая заявка Бибибайк · Подписка 30 дней</b>\n\n"
+                "<b>Новая заявка Бибибайк · Подписка 30 дней + 300 Бибибонусов</b>\n\n"
                 f"Участник: {html.escape(participant['display_name'])}\n"
                 f"Telegram: {html.escape(username)} · <code>{participant['user_id']}</code>\n"
                 f"ID участника: <code>{html.escape(participant['public_code'])}</code>\n"
                 f"Телефон: <code>{html.escape(participant.get('phone') or 'не указан')}</code>\n"
+                f"Награда: подписка 30 дней и {QUEST_TOTAL_BIBIBONUS} Бибибонусов\n"
                 f"Завершение подтверждено · заявка {html.escape(participant['requested_at'])}"
             )
             try:
                 await bot.send_message(target, message)
                 notified = True
             except Exception as exc:
-                log.warning("Не удалось отправить заявку на подписку session=%s: %s", session_id, type(exc).__name__)
+                log.warning("Не удалось отправить заявку на финальную награду session=%s: %s", session_id, type(exc).__name__)
                 notified = False
             await service.finish_premium_notification(session_id, claim, notified)
             result["data"] = await service.state(identity)
@@ -3472,13 +3574,14 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
             try:
                 await bot.send_message(
                     item["user_id"],
-                    "<b>Подписка 30 дней подтверждена</b>\n\n"
+                    "<b>Финальная награда подтверждена</b> 💚\n\n"
                     f"Заявка <code>{html.escape(item['public_code'])}</code> обработана. "
-                    "Если подписка не появилась, напиши в поддержку Бибибайк.",
+                    f"Подписка на 30 дней подключена, {item['bonus_points']} Бибибонусов начислены. "
+                    "Если награда не появилась, напиши в поддержку Бибибайк.",
                 )
                 notified = True
             except Exception as exc:
-                log.warning("Не удалось уведомить о подписке user=%s: %s", item["user_id"], type(exc).__name__)
+                log.warning("Не удалось уведомить о финальной награде user=%s: %s", item["user_id"], type(exc).__name__)
         return json_response({"data": await service.admin_overview(), "notified": notified})
 
     async def admin_link_qr(request):
@@ -3504,12 +3607,12 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         writer = csv.writer(output, delimiter=";")
         writer.writerow([
             "Telegram ID", "Username", "Имя", "Старт", "Завершение",
-            "Заявка на подписку 30 дней", "ID участника", "Телефон", "Статус", "Выдано",
+            "Бибибонусы", "Заявка на финальную награду", "ID участника", "Телефон", "Статус", "Выдано",
         ])
         for row in rows:
             writer.writerow([_csv_safe(row[key]) for key in row.keys()])
         body = "\ufeff" + output.getvalue()
-        return web.Response(body=body.encode("utf-8"), content_type="text/csv", headers={"Content-Disposition": 'attachment; filename="bibibike-subscription-30-days.csv"', "Cache-Control": "no-store"})
+        return web.Response(body=body.encode("utf-8"), content_type="text/csv", headers={"Content-Disposition": 'attachment; filename="bibibike-quest-rewards.csv"', "Cache-Control": "no-store"})
 
     app.router.add_get("/", index)
     app.router.add_get("/index.html", index)
