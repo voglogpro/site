@@ -142,13 +142,17 @@ BIBIBONUS_PER_POINT = 100
 QUEST_POINT_COUNT = 3
 QUEST_TOTAL_BIBIBONUS = BIBIBONUS_PER_POINT * QUEST_POINT_COUNT
 
-# Один публичный промокод закреплён за каждой физической точкой. Код никогда не
-# входит в обычный state мини-приложения: сервер отдаёт его только участнику,
-# который подтвердил уникальный QR этой точки. Внешнее приложение Бибибайк
-# дополнительно должно разрешать активацию каждого кода один раз на аккаунт.
+# Один публичный промокод закреплён за каждой физической точкой. Значения по
+# умолчанию позволяют существующему BotHost запуститься без новых переменных;
+# QUEST_PROMO_POINT_1..3 нужны только для будущей замены кодов.
+DEFAULT_QUEST_PROMO_CODES: dict[int, str] = {
+    1: "PROMODOLINA",
+    2: "PROMO100",
+    3: "PROMOGREEN",
+}
 QUEST_PROMO_CODES: dict[int, str] = {
     seq: os.getenv(f"QUEST_PROMO_POINT_{seq}", "").strip()
-    or (f"DEV-PROMO-{seq}" if _bool("DEV_MODE") else "")
+    or DEFAULT_QUEST_PROMO_CODES[seq]
     for seq in range(1, QUEST_POINT_COUNT + 1)
 }
 
@@ -257,9 +261,6 @@ def load_settings() -> Settings:
             missing.append("ADMIN_PASSWORD (минимум 10 символов)")
         if len(qr_secret) < 32:
             missing.append("QR_SECRET (минимум 32 символа)")
-        for seq, promo_code in QUEST_PROMO_CODES.items():
-            if not promo_code:
-                missing.append(f"QUEST_PROMO_POINT_{seq}")
         if missing:
             raise RuntimeError("Не заданы обязательные настройки: " + ", ".join(missing))
     if dev_mode:

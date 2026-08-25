@@ -19,6 +19,10 @@ from quest.service import QuestError, QuestService
 import main as production
 from aiogram.methods import SetMyName
 
+assert production.DEFAULT_QUEST_PROMO_CODES == {
+    1: "PROMODOLINA", 2: "PROMO100", 3: "PROMOGREEN",
+}
+
 
 async def production_reward_scenario() -> None:
     """Проверяет именно запускаемый main.py, включая одноразовую выдачу."""

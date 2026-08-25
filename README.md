@@ -59,9 +59,10 @@ ADMIN_PASSWORD=длинный-уникальный-пароль
 # необязательно, только для служебных команд бота
 ADMIN_IDS=
 QR_SECRET=случайная-строка-не-короче-32-символов
-QUEST_PROMO_POINT_1=промокод-первой-точки
-QUEST_PROMO_POINT_2=промокод-второй-точки
-QUEST_PROMO_POINT_3=промокод-третьей-точки
+# необязательно: только для будущей замены встроенных промокодов этапов
+QUEST_PROMO_POINT_1=
+QUEST_PROMO_POINT_2=
+QUEST_PROMO_POINT_3=
 DATA_DIR=/app/data
 WEB_PORT=3000
 TIMEZONE=Europe/Moscow
