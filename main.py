@@ -561,6 +561,18 @@ CREATE INDEX IF NOT EXISTS admin_broadcasts_created
 CREATE INDEX IF NOT EXISTS admin_broadcast_deliveries_pending
     ON admin_broadcast_deliveries(broadcast_id,status);
 
+CREATE TABLE IF NOT EXISTS quest_feedback (
+    session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES participants(user_id) ON DELETE CASCADE,
+    scores_json TEXT NOT NULL,
+    comment TEXT NOT NULL DEFAULT '',
+    request_id TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS quest_feedback_updated
+    ON quest_feedback(updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS point_qr_codes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     point_id INTEGER NOT NULL REFERENCES points(id) ON DELETE CASCADE,
@@ -702,7 +714,7 @@ class Database:
             (now,),
         )
         await self._db.execute(
-            "INSERT INTO schema_meta(key,value) VALUES('version','5') ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+            "INSERT INTO schema_meta(key,value) VALUES('version','6') ON CONFLICT(key) DO UPDATE SET value=excluded.value"
         )
         await self._db.execute(
             """UPDATE campaigns SET premium_title='Подписка 30 дней + 300 Бибибонусов'
@@ -1401,6 +1413,7 @@ class QuestService:
             previous_point = point
             point_data.append(item)
         entitlement = None
+        feedback = None
         if session:
             entitlement = await (await db.execute(
                 """SELECT public_code,status,requested_at,support_notified_at,issued_at,phone,
@@ -1408,6 +1421,19 @@ class QuestService:
                    FROM premium_entitlements WHERE session_id=?""",
                 (session["id"],),
             )).fetchone()
+            feedback = await (await db.execute(
+                """SELECT scores_json,comment,created_at,updated_at
+                   FROM quest_feedback WHERE session_id=?""",
+                (session["id"],),
+            )).fetchone()
+        feedback_data = row_dict(feedback)
+        if feedback_data:
+            try:
+                feedback_data["scores"] = json.loads(
+                    feedback_data.pop("scores_json") or "{}"
+                )
+            except (TypeError, ValueError, json.JSONDecodeError):
+                feedback_data["scores"] = {}
         session_data = row_dict(session)
         if session_data:
             for key in ("live_chat_id", "live_message_id", "last_location_at", "last_latitude", "last_longitude"):
@@ -1425,6 +1451,7 @@ class QuestService:
             "location_mode": "optional_local_once",
             "scan_requires_geo": self.settings.scan_require_geo,
             "premium": row_dict(entitlement),
+            "feedback": feedback_data,
             "bonus": {
                 "per_point": BIBIBONUS_PER_POINT,
                 "earned": bonus_earned,
@@ -1837,6 +1864,77 @@ class QuestService:
                     },
                 }
 
+    async def submit_feedback(
+        self, identity: TelegramIdentity, scores: dict,
+        comment: str, request_id: str,
+    ) -> dict:
+        """Save one editable, retry-safe review after quest completion."""
+        score_keys = {"map", "find_point", "qr", "promo", "performance", "other"}
+        request_id = str(request_id or "").strip()
+        comment = re.sub(
+            r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", str(comment or "")
+        ).strip()[:700]
+        if not isinstance(scores, dict) or set(scores) != score_keys:
+            raise QuestError(
+                "feedback_scores_invalid",
+                "Поставь оценку каждому пункту от 1 до 10.",
+                400,
+            )
+        clean_scores: dict[str, int] = {}
+        try:
+            clean_scores = {key: int(scores[key]) for key in sorted(score_keys)}
+        except (TypeError, ValueError, KeyError):
+            pass
+        if set(clean_scores) != score_keys or any(
+            value < 1 or value > 10 for value in clean_scores.values()
+        ):
+            raise QuestError(
+                "feedback_scores_invalid",
+                "Каждая оценка должна быть от 1 до 10.",
+                400,
+            )
+        if not (16 <= len(request_id) <= 100) or not re.fullmatch(
+            r"[A-Za-z0-9._:-]+", request_id
+        ):
+            raise QuestError(
+                "bad_request_id", "Не удалось безопасно сохранить ответ. Попробуй ещё раз.", 400
+            )
+
+        async with self.lock_for(identity.user_id):
+            async with self.db.transaction() as db:
+                session = await (await db.execute(
+                    """SELECT id,status FROM sessions WHERE user_id=?
+                       ORDER BY started_at DESC LIMIT 1""",
+                    (identity.user_id,),
+                )).fetchone()
+                if not session or session["status"] != "completed":
+                    raise QuestError(
+                        "feedback_locked", "Опрос откроется после завершения квеста.", 409
+                    )
+                now = iso()
+                try:
+                    await db.execute(
+                        """INSERT INTO quest_feedback(
+                               session_id,user_id,scores_json,comment,
+                               request_id,created_at,updated_at
+                           ) VALUES(?,?,?,?,?,?,?)
+                           ON CONFLICT(session_id) DO UPDATE SET
+                               scores_json=excluded.scores_json,
+                               comment=excluded.comment,
+                               request_id=excluded.request_id,
+                               updated_at=excluded.updated_at""",
+                        (
+                            session["id"], identity.user_id,
+                            json.dumps(clean_scores, ensure_ascii=False, sort_keys=True),
+                            comment, request_id, now, now,
+                        ),
+                    )
+                except aiosqlite.IntegrityError:
+                    raise QuestError(
+                        "duplicate_request", "Этот ответ уже сохранён. Обнови экран.", 409
+                    )
+                return await self._state_in_tx(db, identity.user_id)
+
     async def activate_support(self, identity: TelegramIdentity) -> dict:
         """Open the CRM thread and remember that free text belongs to support."""
         await self.upsert_participant(identity)
@@ -2223,6 +2321,47 @@ class QuestService:
                                 WHERE direction='user' AND read_at IS NULL),0) unread
                FROM support_conversations"""
         ))
+        feedback_metrics = row_dict(await self.db.fetchone(
+            """SELECT COUNT(*) total,
+                      COALESCE(SUM(comment<>''),0) comments
+               FROM quest_feedback"""
+        ))
+        score_totals = {
+            key: {"sum": 0, "count": 0, "low": 0}
+            for key in ("map", "find_point", "qr", "promo", "performance", "other")
+        }
+        for row in await self.db.fetchall("SELECT scores_json FROM quest_feedback"):
+            try:
+                values = json.loads(row["scores_json"] or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                values = {}
+            for key, bucket in score_totals.items():
+                value = values.get(key)
+                if isinstance(value, int) and 1 <= value <= 10:
+                    bucket["sum"] += value
+                    bucket["count"] += 1
+                    bucket["low"] += int(value <= 5)
+        feedback_scores = {
+            key: {
+                "average": round(bucket["sum"] / bucket["count"], 1)
+                if bucket["count"] else None,
+                "responses": bucket["count"],
+                "low": bucket["low"],
+            }
+            for key, bucket in score_totals.items()
+        }
+        feedback_recent = [row_dict(row) for row in await self.db.fetchall(
+            """SELECT f.session_id,f.scores_json,f.comment,
+                      f.created_at,f.updated_at,p.user_id,p.display_name,p.username
+               FROM quest_feedback f
+               JOIN participants p ON p.user_id=f.user_id
+               ORDER BY f.updated_at DESC LIMIT 100"""
+        )]
+        for item in feedback_recent:
+            try:
+                item["scores"] = json.loads(item.pop("scores_json") or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                item["scores"] = {}
         recent = [row_dict(r) for r in await self.db.fetchall(
             """SELECT s.id,s.status,s.current_seq,s.started_at,s.completed_at,s.integrity_status,
                (SELECT COUNT(*) FROM session_points sp WHERE sp.session_id=s.id AND sp.completed_at IS NOT NULL) completed_points,
@@ -2262,6 +2401,8 @@ class QuestService:
             "campaign": campaign, "points": points, "metrics": metrics, "funnel": funnel,
             "recent": recent, "premium_requests": premium_requests, "qr_codes": qr_codes,
             "support_metrics": support_metrics, "support_conversations": support_conversations,
+            "feedback_metrics": feedback_metrics, "feedback_scores": feedback_scores,
+            "feedback_recent": feedback_recent,
             "broadcast_audiences": broadcast_audiences, "broadcasts": broadcasts,
             "map": {"attribution": self.settings.map_attribution, "mapgl_key": mapgl_key_for(self.settings), "mapgl_style": self.settings.mapgl_style, "mapgl_styles": {"light": self.settings.mapgl_style_light, "dark": self.settings.mapgl_style_dark}, # Подложка для карты в CRM. В приложении карту рисует 2ГИС, а панели
                     # нужен обычный источник тайлов: раньше адрес брался из
@@ -3728,6 +3869,22 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
             "support_url": "" if notified or support_pending else support_draft_url(settings.support_url, draft),
         })
 
+    async def submit_feedback(request):
+        identity = request_identity(request, settings)
+        if not limiter.allow(f"feedback:{identity.user_id}", 8):
+            raise QuestError("rate_limited", "Подожди минуту и попробуй снова.", 429)
+        body = await json_body(request, max_keys=4)
+        scores = body.get("scores")
+        if not isinstance(scores, dict):
+            scores = {}
+        data = await service.submit_feedback(
+            identity,
+            scores,
+            str(body.get("comment") or ""),
+            str(body.get("request_id") or ""),
+        )
+        return json_response({"data": data})
+
     async def share_invite(request):
         nonlocal bot_username_cache
         identity = request_identity(request, settings)
@@ -4016,6 +4173,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
     app.router.add_post("/api/quest/scan", scan)
     app.router.add_post("/api/quest/rewards/{seq}/redeem", redeem_reward)
     app.router.add_post("/api/quest/premium/request", request_premium)
+    app.router.add_post("/api/quest/feedback", submit_feedback)
     app.router.add_post("/api/quest/share/invite", share_invite)
     app.router.add_post("/api/admin/login", admin_login)
     app.router.add_post("/api/admin/logout", admin_logout)

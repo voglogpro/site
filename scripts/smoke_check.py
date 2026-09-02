@@ -63,6 +63,16 @@ async def production_reward_scenario() -> None:
             assert created is True and started["session"]["status"] == "active"
             resumed, created_again = await service.start_with_status(identity, True)
             assert created_again is False and resumed["session"]["id"] == started["session"]["id"]
+            try:
+                await service.submit_feedback(
+                    identity,
+                    {"map": 10, "find_point": 10, "qr": 10, "promo": 10, "performance": 10, "other": 10},
+                    "", "feedback-smoke-locked-0001"
+                )
+            except production.QuestError as exc:
+                assert exc.code == "feedback_locked"
+            else:
+                raise AssertionError("feedback opened before quest completion")
             # Даже если QR_SECRET случайно заменили, уже напечатанная табличка
             # остаётся рабочей через сохранённый шестисимвольный backup-код.
             changed_secret_service = production.QuestService(
@@ -110,6 +120,25 @@ async def production_reward_scenario() -> None:
                 (completed_state["session"]["id"],),
             ))["total"] == 300
             assert completed_state["premium"]["requested_at"] is None
+            feedback_state = await service.submit_feedback(
+                identity,
+                {"map": 6, "find_point": 8, "qr": 7, "promo": 9, "performance": 10, "other": 8},
+                "На одном повороте было непонятно, куда идти.",
+                "feedback-smoke-request-0001",
+            )
+            assert feedback_state["feedback"]["scores"]["map"] == 6
+            assert feedback_state["feedback"]["scores"]["qr"] == 7
+            edited_feedback = await service.submit_feedback(
+                identity,
+                {"map": 9, "find_point": 9, "qr": 10, "promo": 10, "performance": 8, "other": 9},
+                "В остальном всё понравилось!",
+                "feedback-smoke-request-0001",
+            )
+            assert edited_feedback["feedback"]["scores"]["performance"] == 8
+            assert (await db.fetchone(
+                "SELECT COUNT(*) count FROM quest_feedback WHERE session_id=?",
+                (completed_state["session"]["id"],),
+            ))["count"] == 1
             final_reward = await service.redeem_reward(identity, 3, "reward-smoke-request-0004")
             assert final_reward["reward"]["code"] == "TEST-GREEN"
             premium_id = "premium-smoke-request-0001"
@@ -151,6 +180,10 @@ async def production_reward_scenario() -> None:
             overview = await service.admin_overview()
             assert overview["funnel"]["premium_pending"] == 1
             assert overview["funnel"]["bonuses_earned"] == 300
+            assert overview["feedback_metrics"]["total"] == 1
+            assert overview["feedback_scores"]["map"]["average"] == 9.0
+            assert overview["feedback_scores"]["map"]["low"] == 0
+            assert overview["feedback_recent"][0]["comment"] == "В остальном всё понравилось!"
             row = next(p for p in overview["recent"] if p["id"] == completed_state["session"]["id"])
             assert row["bonus_points"] == 300
             assert row["premium_requested_at"]
@@ -240,7 +273,7 @@ async def production_reward_scenario() -> None:
             ))["total"] == 300
             assert (await db.fetchone(
                 "SELECT value FROM schema_meta WHERE key='version'"
-            ))["value"] == "5"
+            ))["value"] == "6"
             assert (await db.fetchone(
                 "SELECT status FROM admin_broadcasts WHERE id=?", (interrupted["id"],)
             ))["status"] == "interrupted"
@@ -413,6 +446,9 @@ async def main() -> None:
     assert "Telegram ID:" in admin_app and "ID участника:" in admin_app
     assert "/api/admin/broadcasts" in admin_app and "Подтвердить рассылку" in admin_app
     assert "История рассылок" in admin_app and "pendingBroadcastRequestId" in admin_app
+    assert "/api/quest/feedback" in webapp and "Оцени квест" in webapp
+    assert "1 · проблема" in webapp and "10 · отлично" in webapp
+    assert "feedbackOverview" in admin_app and "Впечатления участников" in admin_app
     assert "function useMapgl(){return !!mapglKey()&&!!window.mapgl&&!window.__mapglFailed}" in webapp
     assert "function initGlMap(" in webapp and "new mapgl.Map(node,opts)" in webapp
     assert "function startSplashMotion(" in webapp and "requestAnimationFrame(render)" in webapp
@@ -455,5 +491,5 @@ async def main() -> None:
     assert validate_admin_ticket(ticket, settings, now=1_000 + settings.admin_ticket_ttl_sec + 1) is None
     for order in itertools.permutations(range(3)): await scenario(order)
     await production_reward_scenario()
-    print("PASS: persistence, maps, 6 point orders, QR and 100-point bonus idempotency, password session, one-time rewards, 30-day subscription + 300 bonuses, CRM support, broadcast delivery and native video sharing")
+    print("PASS: persistence, maps, 6 point orders, QR and 100-point bonus idempotency, post-quest feedback, password session, one-time rewards, 30-day subscription + 300 bonuses, CRM support, broadcast delivery and native video sharing")
 if __name__ == "__main__": asyncio.run(main())
