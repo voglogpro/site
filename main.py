@@ -1661,6 +1661,66 @@ class QuestService:
                 }
                 return result
 
+    async def self_checkin(self, identity: TelegramIdentity, seq: int, request_id: str) -> dict:
+        """Отметить точку по кнопке «Я на месте» — без сканирования и гео.
+
+        Живой сценарий у стойки: табличку закрыли, камера не открывается или
+        человек просто не хочет возиться с QR. Штамп ставится тем же путём,
+        что и после скана, поэтому промокод, бонусы и финал считаются
+        одинаково. Каждое нажатие пишется в qr_scans с отметкой self_checkin —
+        в выгрузке видно, как именно закрыта точка.
+        """
+        if seq not in (1, 2, 3):
+            raise QuestError("bad_point", "Точка не найдена.", 404)
+        request_id = (request_id or "").strip() or f"self-{uuid.uuid4()}"
+        if len(request_id) > 80:
+            raise QuestError("invalid_request", "Некорректный запрос.")
+        completed_seq = None
+        already_seq = None
+        async with self.lock_for(identity.user_id):
+            async with self.db.transaction() as db:
+                await self._expire_in_tx(db, identity.user_id)
+                await self._resume_expired_in_tx(db, identity.user_id)
+                session = await (await db.execute(
+                    "SELECT * FROM sessions WHERE user_id=? ORDER BY started_at DESC LIMIT 1", (identity.user_id,)
+                )).fetchone()
+                if not session:
+                    raise QuestError("no_active_session", "Активный квест не найден.", 409)
+                duplicate = await (await db.execute(
+                    "SELECT id FROM qr_scans WHERE request_id=?", (request_id,)
+                )).fetchone()
+                if duplicate:
+                    # Повтор после сетевого обрыва: состояние уже изменено.
+                    return await self._state_in_tx(db, identity.user_id)
+                if session["status"] not in ("awaiting_location", "active", "completed"):
+                    raise QuestError("no_active_session", "Активный квест не найден.", 409)
+                point = await (await db.execute(
+                    "SELECT * FROM session_points WHERE session_id=? AND seq=?", (session["id"], seq)
+                )).fetchone()
+                if not point:
+                    raise QuestError("bad_point", "Точка не найдена.", 404)
+                await db.execute(
+                    "INSERT INTO qr_scans(session_id,point_id,token_fingerprint,request_id,scanned_at,accepted,reject_reason) VALUES(?,?,?,?,?,1,'')",
+                    (session["id"], point["point_id"], "self_checkin", request_id, iso()),
+                )
+                if point["completed_at"]:
+                    already_seq = point["seq"]
+                else:
+                    await db.execute(
+                        "UPDATE session_points SET qr_seen_at=COALESCE(qr_seen_at,?) WHERE id=?", (iso(), point["id"])
+                    )
+                    if await self._try_complete_in_tx(db, session["id"], point["seq"]):
+                        completed_seq = point["seq"]
+            async with self.db.transaction() as db:
+                result = await self._state_in_tx(db, identity.user_id)
+                result["event"] = {
+                    "point_completed": completed_seq,
+                    "already_completed": already_seq,
+                    "bonus_awarded": BIBIBONUS_PER_POINT if completed_seq else 0,
+                    "self_checkin": True,
+                }
+                return result
+
     async def _try_complete_in_tx(self, db, session_id: str, seq: int) -> bool:
         point = await (await db.execute("SELECT * FROM session_points WHERE session_id=? AND seq=?", (session_id, seq))).fetchone()
         if not point or point["completed_at"] or not point["qr_seen_at"]:
@@ -3780,6 +3840,34 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
             except (TypeError, ValueError):
                 position = None
         data = await service.scan(identity, str(body.get("qr_code") or ""), str(body.get("request_id") or uuid.uuid4()), position=position)
+        await announce_point_completed(identity, data)
+        return json_response({"data": data})
+
+    async def self_checkin(request):
+        """«Я на месте» — участник сам подтверждает визит, без QR и гео.
+
+        Кнопка стоит выше сканера: часть людей доходит до партнёра, но не
+        сканирует табличку, и точка остаётся незакрытой. Ограничение частоты
+        такое же, как у скана.
+        """
+        identity = request_identity(request, settings)
+        if not limiter.allow(f"checkin:{identity.user_id}", 10):
+            raise QuestError("rate_limited", "Слишком много попыток. Подожди минуту.", 429)
+        body = await json_body(request, max_keys=4)
+        try:
+            seq = int(body.get("seq"))
+        except (TypeError, ValueError):
+            raise QuestError("bad_point", "Точка не найдена.", 404)
+        data = await service.self_checkin(identity, seq, str(body.get("request_id") or uuid.uuid4()))
+        await announce_point_completed(identity, data)
+        return json_response({"data": data})
+
+    async def announce_point_completed(identity, data):
+        """Сообщить участнику и админам о закрытой точке.
+
+        Общее для скана и кнопки «Я на месте»: тексты и уведомления не должны
+        расходиться между двумя способами подтверждения.
+        """
         completed = data.get("event", {}).get("point_completed")
         if completed:
             completed_count = len([point for point in data.get("points", []) if point.get("completed_at")])
@@ -3809,7 +3897,6 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
                 notify_admins_about_progress(identity, data, int(completed)),
                 name=f"notify-progress-{identity.user_id}-{completed}",
             )
-        return json_response({"data": data})
 
     async def redeem_reward(request):
         identity = request_identity(request, settings)
@@ -4171,6 +4258,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
     app.router.add_post("/api/quest/start", start)
     app.router.add_post("/api/quest/event", event)
     app.router.add_post("/api/quest/scan", scan)
+    app.router.add_post("/api/quest/checkin", self_checkin)
     app.router.add_post("/api/quest/rewards/{seq}/redeem", redeem_reward)
     app.router.add_post("/api/quest/premium/request", request_premium)
     app.router.add_post("/api/quest/feedback", submit_feedback)

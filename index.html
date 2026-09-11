@@ -1603,7 +1603,7 @@ function initUserMap(p){
   if(!window.mapgl)return mapErrorScreen(node,'Не удалось загрузить карту 2ГИС. Проверь интернет и попробуй снова.');
   return initGlMap(node,p,0,++mapAttemptId)}
 
-function stickyActions(p){if(p.completed_at)return `<div class="sticky-actions"><button class="btn primary" onclick="showReward(${p.seq})">Открыть подарок</button><button class="btn secondary" onclick="passportScreen()">Мой квест</button></div>`;return `<div class="sticky-actions"><button class="btn primary" onclick="chooseNavigator(${p.seq})">${icon('route')}<span>Построить маршрут${localDistance(p)!=null?' · '+fmt(localDistance(p)):''}</span></button><button class="btn secondary" onclick="scanPoint(${p.seq})">${icon('scan')}<span>Поставить штамп · QR</span></button></div>`}
+function stickyActions(p){if(p.completed_at)return `<div class="sticky-actions"><button class="btn primary" onclick="showReward(${p.seq})">Открыть подарок</button><button class="btn secondary" onclick="passportScreen()">Мой квест</button></div>`;return `<div class="sticky-actions">${checkinButton(p.seq)}<button class="btn secondary" onclick="chooseNavigator(${p.seq})">${icon('route')}<span>Построить маршрут${localDistance(p)!=null?' · '+fmt(localDistance(p)):''}</span></button><button class="btn secondary" onclick="scanPoint(${p.seq})">${icon('scan')}<span>Отсканировать QR</span></button></div>`}
 /* Адрес поддержки приходит из настроек сервера (SUPPORT_URL), а не зашит в вёрстку. */
 const SUPPORT_FALLBACK='https://t.me/bbbike_support_bot';
 /* Профиль ведёт в этот же квест-бот с deep-link параметром: бот сразу
@@ -1720,10 +1720,11 @@ function partnerScreen(seq,scanned=false){
         <button class="btn secondary" onclick="routeToPoint(${p.seq})">${icon('route')}<span>Маршрут</span></button>
         ${done
           ?(p.reward_used?`<button class="btn secondary" onclick="passportScreen()">${icon('stamp')}<span>Использован</span></button>`:`<button class="btn primary" onclick="prepareReward(${p.seq})">${icon('gift')}<span>Получить промокод</span></button>`)
-          :`<button class="btn primary" onclick="scanPoint(${p.seq})">${icon('scan')}<span>Штамп</span></button>`}
+          :`${checkinButton(p.seq)}
+            <button class="btn secondary" onclick="scanPoint(${p.seq})">${icon('scan')}<span>QR</span></button>`}
       </div>
     </div>
-    ${done?'':'<p class="partner-note">Подарок выдаётся после сканирования зелёной таблички Бибибайк у стойки.</p>'}
+    ${done?'':'<p class="partner-note">Нажми «Я на месте» у стойки — или отсканируй зелёную табличку Бибибайк. Подарок выдаётся сразу.</p>'}
   </section>
   ${tabbar('partners')}`)}
 
@@ -1975,7 +1976,8 @@ function locSheet(p){
         ${done
           ?`<button class="btn primary" onclick="showReward(${p.seq})">Открыть подарок</button>
             <button class="btn secondary" onclick="passportScreen()">Мой квест</button>`
-          :`<button class="btn primary" onclick="scanPoint(${p.seq})">${icon('scan')}<span>Поставить штамп · QR</span></button>
+          :`${checkinButton(p.seq)}
+            <button class="btn secondary" onclick="scanPoint(${p.seq})">${icon('scan')}<span>Отсканировать QR у стойки</span></button>
             <button class="btn secondary" onclick="drawRoute(${p.seq},event)">${icon('route')}<span>${routeSeq===p.seq?'Убрать маршрут с карты':'Показать маршрут на карте'}</span></button>
             <button class="btn ghost-link" onclick="chooseNavigator(${p.seq})">Открыть в навигаторе${d!=null?' · '+fmt(d):''}</button>`}
       </div>
@@ -2200,10 +2202,35 @@ function presentModal(html){modalTrigger=document.activeElement;modal.innerHTML=
 function chooseNavigator(seq){const p=pointBySeq(seq);selectedSeq=seq;presentModal(`<div class="modal" onclick="if(event.target===this)closeModal()"><section class="sheet"><div class="sheet-head"><div><p class="micro">КАК ДОБРАТЬСЯ</p><h2>${esc(p.point_name)}</h2></div><button class="icon-button" aria-label="Закрыть" onclick="closeModal()">×</button></div><p class="sheet-copy">Навигатор сам определит твоё текущее местоположение.</p><div class="navigator-list"><button onclick="openRoute(${seq},'yandex','bc')"><span class="provider yandex">Я</span><b>Яндекс · на велосипеде</b>${icon('arrow')}</button><button onclick="openRoute(${seq},'yandex','pd')"><span class="provider yandex">Я</span><b>Яндекс · пешком</b>${icon('arrow')}</button><button onclick="openRoute(${seq},'2gis','car')"><span class="provider dgis">2</span><b>2ГИС · на машине</b>${icon('arrow')}</button><button onclick="openRoute(${seq},'2gis','pedestrian')"><span class="provider dgis">2</span><b>2ГИС · пешком</b>${icon('arrow')}</button></div><button class="btn quiet" onclick="copyAddress(${seq})">Скопировать адрес</button></section></div>`)}
 function openRoute(seq,provider,mode){const p=pointBySeq(seq);eventLog('navigator_open',p.point_id,provider);const points=encodeURIComponent(`|${p.longitude},${p.latitude}`),url=provider==='yandex'?`https://yandex.ru/maps/?rtext=~${p.latitude},${p.longitude}&rtt=${mode}`:`https://2gis.ru/directions/tab/${mode==='pedestrian'?'pedestrian':'car'}/points/${points}`;closeModal();tg?.openLink?tg.openLink(url,{try_instant_view:false}):window.open(url,'_blank','noopener')}
 function copyAddress(seq){const p=pointBySeq(seq);copyText(p?.address||'','Адрес скопирован')}
-function scannerScreen(p){show(`${header(`<button class="icon-button" aria-label="Вернуться к маршруту" onclick="routeScreen(${p.seq},false)">${icon('back')}</button>`)}<section class="scanner-screen">${localDistance(p)!=null?`<span class="scan-chip">гео ок · ${fmt(localDistance(p))}</span>`:''}<div class="scanner-hint"><h1>Сканируй QR партнёра</h1><p>Наведи камеру на табличку у стойки «${esc(shortName(p))}». Отметка засчитается сразу.</p></div><div class="scanner-frame" aria-hidden="true"><i></i><i></i><i></i><i></i><span class="grid"></span><span class="beam"></span></div><div class="scanner-safety">Сначала полностью остановись и припаркуй байк</div><button class="btn primary" onclick="openNativeScanner(${p.seq})">${icon('scan')} Открыть камеру</button><button class="btn secondary" onclick="manualCode()">Ввести код вручную</button></section>`)}
+function scannerScreen(p){show(`${header(`<button class="icon-button" aria-label="Вернуться к маршруту" onclick="routeScreen(${p.seq},false)">${icon('back')}</button>`)}<section class="scanner-screen">${localDistance(p)!=null?`<span class="scan-chip">гео ок · ${fmt(localDistance(p))}</span>`:''}<div class="scanner-hint"><h1>Сканируй QR партнёра</h1><p>Наведи камеру на табличку у стойки «${esc(shortName(p))}». Если таблички не видно — нажми «Я на месте», штамп засчитается сразу.</p></div><div class="scanner-frame" aria-hidden="true"><i></i><i></i><i></i><i></i><span class="grid"></span><span class="beam"></span></div><div class="scanner-safety">Сначала полностью остановись и припаркуй байк</div>${checkinButton(p.seq)}<button class="btn secondary" onclick="openNativeScanner(${p.seq})">${icon('scan')} Открыть камеру</button><button class="btn secondary" onclick="manualCode()">Ввести код вручную</button></section>`)}
 function openNativeScanner(seq){const p=pointBySeq(seq),supported=!!tg?.showScanQrPopup&&(typeof tg.isVersionAtLeast!=='function'||tg.isVersionAtLeast('6.4'));if(!supported)return manualCode();try{qrPopupOpen=true;tg.showScanQrPopup({text:'Наведи камеру на зелёную табличку Бибибайк'},value=>{qrPopupOpen=false;try{tg.closeScanQrPopup()}catch(_){/* popup may already be closed */}submitQr(value);return true})}catch(_){qrPopupOpen=false;manualCode()}}
 function scanPoint(seq){const p=pointBySeq(seq);selectedSeq=seq;eventLog('qr_open',p.point_id);scannerScreen(p);openNativeScanner(seq)}
 function manualCode(){presentModal(`<div class="modal" onclick="if(event.target===this)closeModal()"><section class="sheet"><div class="sheet-head"><div><p class="micro">РУЧНОЙ ВВОД</p><h2>Код точки</h2></div><button class="icon-button" aria-label="Закрыть" onclick="closeModal()">×</button></div><p class="sheet-copy">Введи короткий код с зелёной таблички Бибибайк.</p><form onsubmit="submitQr(document.getElementById('manual-code').value,event)"><label class="field">Код<input id="manual-code" autocomplete="off" autocapitalize="characters" maxlength="80" placeholder="Например: A1B2C3" required></label><button class="btn primary">Поставить штамп</button></form></section></div>`)}
+/* «Я на месте» — подтверждение визита без сканирования.
+   Часть участников доходит до партнёра, но до QR дело не доходит: табличку
+   закрыли, камера не открылась, очередь. Кнопка стоит выше сканера и
+   закрывает точку сразу, чтобы человек не ушёл без подарка. */
+function checkinButton(seq,cls='btn primary'){return `<button class="${cls}" onclick="selfCheckin(${seq},event)">${icon('stamp')}<span>Я на месте</span></button>`}
+async function selfCheckin(seq,event){
+  const btn=event?.currentTarget;const p=pointBySeq(seq);
+  if(!p)return;
+  if(p.completed_at)return showReward(seq);
+  if(btn)btn.disabled=true;
+  selectedSeq=seq;
+  try{
+    const before=completed();
+    state=(await api('/api/quest/checkin',{method:'POST',body:JSON.stringify({seq,request_id:requestId()})})).data;
+    cacheState(state);
+    closeModal();
+    const after=completed(),ev=state.event||{};
+    if(after>before)return claimStagePromo(ev.point_completed||seq);
+    if(ev.already_completed){
+      tg?.HapticFeedback?.notificationOccurred?.('warning');
+      toast('Эта точка уже отмечена — подарок сохранён в квесте');
+      return showReward(ev.already_completed);
+    }
+    routeScreen();
+  }catch(x){if(btn)btn.disabled=false;tg?.HapticFeedback?.notificationOccurred?.('error');toast(x.message)}}
 async function submitQr(value,event){
   event?.preventDefault?.();const submit=event?.submitter||modal.querySelector('form .btn.primary');if(submit)submit.disabled=true;
   value=questCodeFrom(value);
