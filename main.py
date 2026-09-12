@@ -168,14 +168,14 @@ QUEST_SHARE_TEXT = """Бибибайк КВЕСТ 💚
 
 Добро пожаловать в квест «Бибибайк» 💚
 
-Гуляй по Красной Поляне, отмечайся на локациях, получай подарки от наших партнёров. За каждую пройденную точку ты получишь 100 Бибибонусов, а за весь квест — подписку «Бибибайк» на 30 дней и 300 Бибибонусов.
+Гуляй по Красной Поляне, отмечайся на локациях, получай подарки от наших партнёров. За каждую пройденную точку ты получишь 100 Бибибонусов — всего 300. А за весь квест откроется подписка «Бибибайк» на 30 дней.
 
 Здесь всё просто:
 1. Выбери любую из трёх точек.
 2. Построй маршрут в Яндекс Картах или 2ГИС.
 3. На месте отсканируй QR через мини-приложение и забери подарок.
 
-Как только отсканировано 3 уникальных QR-кода — квест считается пройденным. Финальная награда — Подписка 30 дней «Бибибайк» и 300 Бибибонусов 🛵
+Как только отсканировано 3 уникальных QR-кода — квест считается пройденным. К этому моменту 300 Бибибонусов уже начислены за этапы, а финальная награда — подписка «Бибибайк» на 30 дней 🛵
 
 Во время поездки следи за дорогой, а телефон используй только после полной остановки."""
 
@@ -351,8 +351,8 @@ CREATE TABLE IF NOT EXISTS campaigns (
     city TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','active','paused','ended')),
     session_duration_min INTEGER NOT NULL DEFAULT 240 CHECK(session_duration_min BETWEEN 30 AND 1440),
-    premium_title TEXT NOT NULL DEFAULT 'Подписка 30 дней + 300 Бибибонусов',
-    premium_instruction TEXT NOT NULL DEFAULT 'Нажми «Получить награду». Команда Бибибайк проверит квест, подключит бесплатную подписку на 30 дней и начислит 300 Бибибонусов.',
+    premium_title TEXT NOT NULL DEFAULT 'Подписка на 30 дней',
+    premium_instruction TEXT NOT NULL DEFAULT 'Нажми «Получить награду». Команда Бибибайк проверит квест и подключит бесплатную подписку на 30 дней. 300 Бибибонусов уже начислены автоматически — по 100 за каждый этап.',
     starts_at TEXT,
     ends_at TEXT,
     created_at TEXT NOT NULL,
@@ -717,13 +717,13 @@ class Database:
             "INSERT INTO schema_meta(key,value) VALUES('version','6') ON CONFLICT(key) DO UPDATE SET value=excluded.value"
         )
         await self._db.execute(
-            """UPDATE campaigns SET premium_title='Подписка 30 дней + 300 Бибибонусов'
-               WHERE premium_title IN ('Подписка 30 дней','Премиум bb.bike на 30 дней','Premium bb.bike на 30 дней','Premium BBBIKE на 30 дней')"""
+            """UPDATE campaigns SET premium_title='Подписка на 30 дней'
+               WHERE premium_title IN ('Подписка 30 дней + 300 Бибибонусов','Подписка 30 дней','Премиум bb.bike на 30 дней','Premium bb.bike на 30 дней','Premium BBBIKE на 30 дней')"""
         )
         await self._db.execute(
             """UPDATE campaigns
-               SET premium_instruction='Нажми «Получить награду». Команда Бибибайк проверит квест, подключит бесплатную подписку на 30 дней и начислит 300 Бибибонусов.'
-               WHERE premium_instruction IN ('Нажми «Получить подписку». Команда Бибибайк проверит квест и подключит бесплатную подписку на 30 дней для старта на байке.','Покажи этот экран администратору. Премиум будет оформлен вручную.','Нажми «Получить Premium». Команда BBBIKE проверит квест и подключит подписку на 30 дней.')"""
+               SET premium_instruction='Нажми «Получить награду». Команда Бибибайк проверит квест и подключит бесплатную подписку на 30 дней. 300 Бибибонусов уже начислены автоматически — по 100 за каждый этап.'
+               WHERE premium_instruction IN ('Нажми «Получить награду». Команда Бибибайк проверит квест, подключит бесплатную подписку на 30 дней и начислит 300 Бибибонусов.','Нажми «Получить подписку». Команда Бибибайк проверит квест и подключит бесплатную подписку на 30 дней для старта на байке.','Покажи этот экран администратору. Премиум будет оформлен вручную.','Нажми «Получить Premium». Команда BBBIKE проверит квест и подключит подписку на 30 дней.')"""
         )
         await self._db.commit()
         check = await (await self._db.execute("PRAGMA quick_check")).fetchone()
@@ -1833,13 +1833,13 @@ class QuestService:
         return conversation_id
 
     async def request_premium(self, identity: TelegramIdentity, request_id: str, phone: str = "") -> dict:
-        """Create one retry-safe request for the final subscription and bonuses."""
+        """Create one retry-safe request for the final subscription."""
         request_id = (request_id or "").strip()
         phone = normalize_phone(phone)
         if not phone:
             raise QuestError(
                 "bad_phone",
-                "Проверь номер телефона — он нужен для подписки и начисления Бибибонусов.",
+                "Проверь номер телефона — он нужен для подключения подписки.",
                 400,
             )
         if not (16 <= len(request_id) <= 100) or not re.fullmatch(r"[A-Za-z0-9._:-]+", request_id):
@@ -1888,7 +1888,8 @@ class QuestService:
                        ) VALUES(?,'system','premium_request',?,?,?)""",
                     (
                         conversation_id,
-                        "Заявка на финальную награду: подписка 30 дней + 300 Бибибонусов. "
+                        "Заявка на финальную награду: выдать только подписку на 30 дней. "
+                        "300 Бибибонусов уже начислены автоматически за три этапа — повторно не начислять. "
                         f"ID участника: {row['public_code']}. Телефон: "
                         f"{phone or (row['phone'] if 'phone' in row.keys() else '') or 'не указан'}.",
                         f"premium:{row['session_id']}",
@@ -3027,7 +3028,7 @@ def build_router(service: QuestService, settings: Settings) -> Router:
                 "Это одна из трёх партнёрских точек в Красной Поляне. "
                 "Открой приложение — отметка засчитается сама, а подарок партнёра "
                 "сохранится в квесте.\n\n"
-                "Собери все три штампа и получи подписку на 30 дней и 300 Бибибонусов.",
+                "Собери все три штампа, получи по 100 Бибибонусов за каждый и открой подписку на 30 дней.",
                 reply_markup=quest_keyboard(settings),
             )
             return
@@ -3464,7 +3465,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
             f"Прогресс: {completed_count} из {QUEST_POINT_COUNT}"
         )
         if final:
-            text += "\n\nФинальная награда открыта: подписка на 30 дней и 300 Бибибонусов."
+            text += "\n\n300 Бибибонусов уже начислены за три этапа. Финальная награда открыта: подписка на 30 дней."
         recipients = (set(settings.admin_ids) | set(GRANTED_ADMINS)) - {identity.user_id}
         for admin_id in sorted(recipients):
             try:
@@ -3878,7 +3879,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
                     f"За эту точку начислено <b>+{BIBIBONUS_PER_POINT} Бибибонусов</b>. "
                     f"Всего: <b>{bonus_earned} из {QUEST_TOTAL_BIBIBONUS}</b>.\n\n"
                     "Промокод Бибибайк готов в квесте — скопируй его и введи в приложении.\n\n"
-                    "Финальная награда уже в приложении: подписка на 30 дней и 300 Бибибонусов."
+                    "300 Бибибонусов уже начислены за три этапа. Финальная награда уже в приложении: подписка на 30 дней."
                 )
             else:
                 text = (
@@ -3915,15 +3916,16 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
         body = await json_body(request, max_keys=3)
         phone = normalize_phone(str(body.get("phone", "")))
         if not phone:
-            raise QuestError("bad_phone", "Проверь номер телефона — он нужен для подписки и начисления Бибибонусов.", 400)
+            raise QuestError("bad_phone", "Проверь номер телефона — он нужен для подключения подписки.", 400)
         result = await service.request_premium(identity, str(body.get("request_id", "")), phone)
         participant = result.pop("participant")
         claim = result.pop("notification_claim")
         session_id = result.pop("session_id")
         draft = (
             "Здравствуйте! Я завершил квест Бибибайк в Красной Поляне и хочу получить "
-            f"подписку на 30 дней и 300 Бибибонусов. ID участника: {participant['public_code']}. "
-            f"Телефон для начисления: {participant.get('phone') or 'не указан'}."
+            f"подписку на 30 дней. ID участника: {participant['public_code']}. "
+            f"Телефон для подключения: {participant.get('phone') or 'не указан'}. "
+            "300 Бибибонусов уже начислены автоматически за три этапа — повторно начислять их не нужно."
         )
         notified = bool(result["data"].get("premium", {}).get("support_notified_at"))
         if claim:
@@ -3932,12 +3934,13 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
                 target = int(settings.support_chat_id)
             username = f"@{participant['username']}" if participant["username"] else "без username"
             message = (
-                "<b>Новая заявка Бибибайк · Подписка 30 дней + 300 Бибибонусов</b>\n\n"
+                "<b>Новая заявка Бибибайк · Подписка на 30 дней</b>\n\n"
                 f"Участник: {html.escape(participant['display_name'])}\n"
                 f"Telegram: {html.escape(username)} · <code>{participant['user_id']}</code>\n"
                 f"ID участника: <code>{html.escape(participant['public_code'])}</code>\n"
                 f"Телефон: <code>{html.escape(participant.get('phone') or 'не указан')}</code>\n"
-                f"Награда: подписка 30 дней и {QUEST_TOTAL_BIBIBONUS} Бибибонусов\n"
+                "Что выдать: <b>только подписку на 30 дней</b>\n"
+                f"Бибибонусы: <b>{QUEST_TOTAL_BIBIBONUS} уже начислены автоматически за три этапа — повторно не начислять</b>\n"
                 f"Завершение подтверждено · заявка {html.escape(participant['requested_at'])}"
             )
             try:
@@ -4202,7 +4205,7 @@ def create_web_app(service: QuestService, settings: Settings, bot: Bot, build_ve
                     item["user_id"],
                     "<b>Финальная награда подтверждена</b> 💚\n\n"
                     f"Заявка <code>{html.escape(item['public_code'])}</code> обработана. "
-                    f"Подписка на 30 дней подключена, {item['bonus_points']} Бибибонусов начислены. "
+                    f"Подписка на 30 дней подключена. {item['bonus_points']} Бибибонусов были начислены автоматически за этапы квеста. "
                     "Если награда не появилась, напиши в поддержку Бибибайк.",
                 )
                 notified = True

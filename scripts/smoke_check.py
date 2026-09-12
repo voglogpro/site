@@ -159,7 +159,8 @@ async def production_reward_scenario() -> None:
             support_reward = await db.fetchone(
                 "SELECT text FROM support_messages WHERE kind='premium_request'"
             )
-            assert "300 Бибибонусов" in support_reward["text"]
+            assert "выдать только подписку" in support_reward["text"]
+            assert "повторно не начислять" in support_reward["text"]
             await service.activate_support(identity)
             assert await service.receive_support_message(identity, "Не вижу подписку", 501)
             assert await service.receive_support_message(identity, "Не вижу подписку", 501)
@@ -462,6 +463,9 @@ async def main() -> None:
     assert "screenCache.get('partners')" not in webapp
     assert "async function partnersScreen()" in webapp and "Загружаем партнёров" in webapp
     assert "+100" in webapp and "300 Бибибонусов" in webapp and "bonus-award" in webapp
+    assert "Что выдать: <b>только подписку на 30 дней</b>" in source
+    assert "повторно не начислять" in source and "повторно не начислять" in admin_app
+    assert "Получить подписку + 300 Бибибонусов" not in webapp
     assert 'id="map-loading-layer"' not in webapp and 'Загружаем карту 2ГИС' not in webapp
     assert 'runSplash();loadMapgl(()=>{});return refresh()' in webapp
     assert 'splashTimer=setTimeout(()=>finishSplashAfterMapTimeout(generation),SPLASH_MAX_MS)' in webapp
@@ -491,5 +495,5 @@ async def main() -> None:
     assert validate_admin_ticket(ticket, settings, now=1_000 + settings.admin_ticket_ttl_sec + 1) is None
     for order in itertools.permutations(range(3)): await scenario(order)
     await production_reward_scenario()
-    print("PASS: persistence, maps, 6 point orders, QR and 100-point bonus idempotency, post-quest feedback, password session, one-time rewards, 30-day subscription + 300 bonuses, CRM support, broadcast delivery and native video sharing")
+    print("PASS: persistence, maps, 6 point orders, QR and 100-point bonus idempotency, post-quest feedback, password session, one-time rewards, stage bonuses + subscription-only final request, CRM support, broadcast delivery and native video sharing")
 if __name__ == "__main__": asyncio.run(main())
