@@ -465,6 +465,7 @@ async def main() -> None:
     assert "+100" in webapp and "300 Бибибонусов" in webapp and "bonus-award" in webapp
     assert "Что выдать: <b>только подписку на 30 дней</b>" in source
     assert "повторно не начислять" in source and "повторно не начислять" in admin_app
+    assert "UPDATE support_messages" in source and "REPLACE(" in source
     assert "Получить подписку + 300 Бибибонусов" not in webapp
     assert 'id="map-loading-layer"' not in webapp and 'Загружаем карту 2ГИС' not in webapp
     assert 'runSplash();loadMapgl(()=>{});return refresh()' in webapp
